@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getAssessment, getEvaluationHistory, getRevisionByIdOrNumber, compareRevisions } from '@/lib/db';
+import { getAssessment, getEvaluationHistory, getRevisionByIdOrNumber, getRevisionByNumber, compareRevisions } from '@/lib/db';
 
 export async function GET(
   req: NextRequest,
@@ -165,7 +165,7 @@ export async function GET(
             total: fromRev.evidence.length,
             hasFullScoring: fromRev.evidence.some(e => e.scoreBreakdown),
             hasCompleteEvidence: fromRev.evidence.every(e => e.evidenceType && e.evidenceStrength),
-            hasMissingInformation: fromRev.evidence.some(e => e.missingInformation?.length > 0)
+            hasMissingInformation: fromRev.evidence.some(e => (e.missingInformation?.length ?? 0) > 0)
           }
         },
         toEvaluation: {
@@ -183,14 +183,14 @@ export async function GET(
             total: toRev.evidence.length,
             hasFullScoring: toRev.evidence.some(e => e.scoreBreakdown),
             hasCompleteEvidence: toRev.evidence.every(e => e.evidenceType && e.evidenceStrength),
-            hasMissingInformation: toRev.evidence.some(e => e.missingInformation?.length > 0)
+            hasMissingInformation: toRev.evidence.some(e => (e.missingInformation?.length ?? 0) > 0)
           }
         }
       },
       comparisonQuality: {
         isComplete: comparison.addedEvidence.length + comparison.removedEvidence.length + comparison.modifiedEvidence.length > 0,
-        hasInconsistentData: comparison.unavailableData.length > 0,
-        evidenceChangeRate: comparison.evidenceChanges.length / (comparison.addedEvidence.length + comparison.removedEvidence.length + comparison.modifiedEvidence.length || 1)
+        hasInconsistentData: (comparison.unavailableData ?? []).length > 0,
+        evidenceChangeRate: (comparison.evidenceChanges ?? []).length / (comparison.addedEvidence.length + comparison.removedEvidence.length + comparison.modifiedEvidence.length || 1)
       }
     };
 
