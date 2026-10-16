@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getAssessment, compareRevisions } from '@/lib/db';
+import { validateId, validatePositiveInteger } from '@/lib/validation';
+import { createErrorResponse } from '@/lib/errors';
 
 export async function GET(
   req: NextRequest,
@@ -7,7 +9,12 @@ export async function GET(
 ) {
   try {
     const { id } = await params;
-    const assessment = getAssessment(id);
+    const idVal = validateId(id, 'Assessment ID');
+    if (!idVal.valid || !idVal.cleanId) {
+      return NextResponse.json({ error: idVal.error || 'Invalid assessment ID format.' }, { status: 400 });
+    }
+
+    const assessment = getAssessment(idVal.cleanId);
     if (!assessment) {
       return NextResponse.json({ error: 'Assessment not found' }, { status: 404 });
     }
@@ -23,23 +30,26 @@ export async function GET(
       );
     }
 
-    const fromRev = parseInt(fromStr, 10);
-    const toRev = parseInt(toStr, 10);
-    if (isNaN(fromRev) || isNaN(toRev)) {
-      return NextResponse.json({ error: 'Invalid revision numbers provided.' }, { status: 400 });
+    const fromVal = validatePositiveInteger(fromStr, '"from" revision number', 1, 100000);
+    if (!fromVal.valid || fromVal.value === undefined) {
+      return NextResponse.json({ error: fromVal.error || 'Invalid revision numbers provided.' }, { status: 400 });
     }
 
-    const comparison = compareRevisions(id, fromRev, toRev);
+    const toVal = validatePositiveInteger(toStr, '"to" revision number', 1, 100000);
+    if (!toVal.valid || toVal.value === undefined) {
+      return NextResponse.json({ error: toVal.error || 'Invalid revision numbers provided.' }, { status: 400 });
+    }
+
+    const comparison = compareRevisions(idVal.cleanId, fromVal.value, toVal.value);
     if (!comparison) {
       return NextResponse.json(
-        { error: `Could not compare revisions #${fromRev} and #${toRev}. Check that both revision numbers exist.` },
+        { error: `Could not compare revisions #${fromVal.value} and #${toVal.value}. Check that both revision numbers exist.` },
         { status: 404 }
       );
     }
 
     return NextResponse.json({ success: true, comparison });
   } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : 'Failed to compare revisions';
-    return NextResponse.json({ error: message }, { status: 500 });
+    return createErrorResponse(error, 'Failed to compare revisions');
   }
 }

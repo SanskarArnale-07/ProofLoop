@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getAssessment } from '@/lib/db';
 import { AI_SIGNAL_DISCLAIMER } from '@/lib/ai-signals';
+import { validateId } from '@/lib/validation';
+import { createErrorResponse } from '@/lib/errors';
 
 export async function GET(
   req: NextRequest,
@@ -8,7 +10,12 @@ export async function GET(
 ) {
   try {
     const { id } = await params;
-    const assessment = getAssessment(id);
+    const idVal = validateId(id, 'Assessment ID');
+    if (!idVal.valid || !idVal.cleanId) {
+      return NextResponse.json({ error: idVal.error || 'Invalid assessment ID format.' }, { status: 400 });
+    }
+
+    const assessment = getAssessment(idVal.cleanId);
     if (!assessment) {
       return NextResponse.json({ error: 'Assessment not found' }, { status: 404 });
     }
@@ -27,11 +34,10 @@ export async function GET(
 
     return NextResponse.json({
       success: true,
-      assessmentId: id,
+      assessmentId: idVal.cleanId,
       signals: aiSignals
     });
   } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : 'Failed to retrieve AI authorship signals';
-    return NextResponse.json({ error: message }, { status: 500 });
+    return createErrorResponse(error, 'Failed to retrieve AI authorship signals');
   }
 }

@@ -1,40 +1,59 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { fetchJobPosting, extractRequirementsFromText, validateUrlSafety } from '@/lib/scraper';
 import { InternshipPosting } from '@/lib/types';
+import { safeParseJson, validateString } from '@/lib/validation';
+import { createErrorResponse } from '@/lib/errors';
 
 export async function POST(req: NextRequest) {
   try {
-    const body = await req.json();
-    const { url, manualText, manualTitle, manualCompany } = body;
+    const { data: body, errorResponse } = await safeParseJson(req);
+    if (errorResponse) {
+      return errorResponse;
+    }
 
-    if (!url && !manualText) {
+    const { url, manualText, manualTitle, manualCompany } = body as Record<string, unknown>;
+
+    const cleanUrl = typeof url === 'string' && url.trim().length > 0 ? url.trim() : undefined;
+    const cleanManualText = typeof manualText === 'string' && manualText.trim().length > 0 ? manualText.trim() : undefined;
+
+    if (!cleanUrl && !cleanManualText) {
       return NextResponse.json(
         { error: 'A job posting URL or manual job description text is required.' },
         { status: 400 }
       );
     }
 
-    let title = manualTitle || '';
-    let company = manualCompany || '';
-    let rawText = manualText || '';
-    let sourceUrl = url || 'https://manual-entry.local';
+    if (cleanManualText && cleanManualText.length > 50000) {
+      return NextResponse.json(
+        { error: 'Manual job description text exceeds maximum limit of 50,000 characters.' },
+        { status: 400 }
+      );
+    }
 
-    if (url) {
-      const safety = validateUrlSafety(url);
+    const titleVal = validateString(manualTitle, 'Job title', 0, 200, false);
+    const companyVal = validateString(manualCompany, 'Company name', 0, 200, false);
+
+    let title = titleVal.cleanValue || '';
+    let company = companyVal.cleanValue || '';
+    let rawText = cleanManualText || '';
+    let sourceUrl = cleanUrl || 'https://manual-entry.local';
+
+    if (cleanUrl) {
+      const safety = validateUrlSafety(cleanUrl);
       if (!safety.safe) {
         return NextResponse.json({ error: safety.error || 'Invalid or unsafe URL.' }, { status: 400 });
       }
 
       try {
-        const fetched = await fetchJobPosting(url);
+        const fetched = await fetchJobPosting(cleanUrl);
         if (!title) title = fetched.title;
         if (!company) company = fetched.company;
         if (!rawText) rawText = fetched.rawText;
-        sourceUrl = url;
+        sourceUrl = cleanUrl;
       } catch (err: unknown) {
         // If scraping failed but manualText was provided, fall back gracefully
-        if (manualText) {
-          rawText = manualText;
+        if (cleanManualText) {
+          rawText = cleanManualText;
         } else {
           const message = err instanceof Error ? err.message : 'Could not retrieve job posting content.';
           return NextResponse.json(
@@ -68,11 +87,6 @@ export async function POST(req: NextRequest) {
       posting
     });
   } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : 'Internal server error while extracting requirements.';
-    console.error('Job extract API error:', error);
-    return NextResponse.json(
-      { error: message },
-      { status: 500 }
-    );
+    return createErrorResponse(error, 'Internal server error while extracting requirements.');
   }
 }

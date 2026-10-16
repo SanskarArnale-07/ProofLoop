@@ -7,6 +7,7 @@ import {
   ActivityEvent,
   GapTask,
   InternshipPosting,
+  InternshipRequirement,
   WebhookDeliveryLog,
   RepositoryEvidence,
   RevisionComparison,
@@ -30,10 +31,9 @@ export function getDatabase(): DatabaseSync {
   const dbPath = path.join(dataDir, 'proofloop.db');
   const db = new DatabaseSync(dbPath);
 
-  // Enable WAL mode, busy timeout, and foreign keys for performance and data safety
+  // Enable WAL mode and foreign keys for performance and data safety
   db.exec(`
     PRAGMA journal_mode = WAL;
-    PRAGMA busy_timeout = 5000;
     PRAGMA foreign_keys = ON;
 
     CREATE TABLE IF NOT EXISTS internships (
@@ -140,19 +140,21 @@ export function getDatabase(): DatabaseSync {
   return db;
 }
 
+export function safeJsonParse<T>(raw: unknown, fallback: T): T {
+  if (typeof raw !== 'string' || !raw.trim()) return fallback;
+  try {
+    return JSON.parse(raw) as T;
+  } catch {
+    return fallback;
+  }
+}
+
 // Internship operations
 export function saveInternship(internship: InternshipPosting): void {
   const db = getDatabase();
   const stmt = db.prepare(`
-    INSERT INTO internships (id, title, company, location, source_url, raw_text, requirements_json, created_at)
+    INSERT OR REPLACE INTO internships (id, title, company, location, source_url, raw_text, requirements_json, created_at)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    ON CONFLICT(id) DO UPDATE SET
-      title = excluded.title,
-      company = excluded.company,
-      location = excluded.location,
-      source_url = excluded.source_url,
-      raw_text = excluded.raw_text,
-      requirements_json = excluded.requirements_json
   `);
   stmt.run(
     internship.id,
@@ -179,7 +181,7 @@ export function getInternship(id: string): InternshipPosting | null {
     location: (row.location as string) || undefined,
     sourceUrl: row.source_url as string,
     rawText: (row.raw_text as string) || undefined,
-    requirements: JSON.parse(row.requirements_json as string),
+    requirements: safeJsonParse<InternshipRequirement[]>(row.requirements_json, []),
     createdAt: row.created_at as string
   };
 }
@@ -193,23 +195,12 @@ export function saveAssessment(assessment: Assessment): void {
     saveInternship(assessment.internship);
 
     const stmt = db.prepare(`
-      INSERT INTO assessments (
+      INSERT OR REPLACE INTO assessments (
         id, internship_id, repo_full_name, repo_url, default_branch,
         latest_commit_sha, current_revision_number, status,
         analysis_scope_json, ai_signals_json, created_at, updated_at
       )
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      ON CONFLICT(id) DO UPDATE SET
-        internship_id = excluded.internship_id,
-        repo_full_name = excluded.repo_full_name,
-        repo_url = excluded.repo_url,
-        default_branch = excluded.default_branch,
-        latest_commit_sha = excluded.latest_commit_sha,
-        current_revision_number = excluded.current_revision_number,
-        status = excluded.status,
-        analysis_scope_json = excluded.analysis_scope_json,
-        ai_signals_json = excluded.ai_signals_json,
-        updated_at = excluded.updated_at
     `);
 
     stmt.run(
@@ -239,65 +230,11 @@ export function saveAssessment(assessment: Assessment): void {
 
     if (assessment.recentActivity && assessment.recentActivity.length > 0) {
       for (const act of assessment.recentActivity) {
-        addActivityEventInternal(db, { ...act, assessmentId: assessment.id });
+        addActivityEventInternal(db, act);
       }
     }
 
     db.exec('COMMIT');
-  } catch (err) {
-    db.exec('ROLLBACK');
-    throw err;
-  }
-}
-
-export const MAX_RETAINED_EVALUATIONS_PER_ASSESSMENT = 10;
-
-/**
- * Enforces the evaluation history retention policy:
- * Retains at most maxRetained (default: 10) completed evaluations per assessment history.
- * Any older evaluations beyond the newest maxRetained are permanently deleted.
- * Must be executed within the active database transaction for atomicity.
- */
-export function enforceEvaluationRetentionInternal(
-  db: DatabaseSync,
-  assessmentId: string,
-  maxRetained: number = MAX_RETAINED_EVALUATIONS_PER_ASSESSMENT
-): number {
-  if (!assessmentId || maxRetained <= 0) return 0;
-
-  // Retrieve IDs of revisions exceeding the retention threshold for this specific assessment
-  const staleStmt = db.prepare(`
-    SELECT id FROM revisions
-    WHERE assessment_id = ?
-    ORDER BY revision_number DESC, created_at DESC
-    LIMIT -1 OFFSET ?
-  `);
-  const staleRows = staleStmt.all(assessmentId, maxRetained) as Array<{ id: string }>;
-
-  if (staleRows.length === 0) {
-    return 0;
-  }
-
-  const deleteStmt = db.prepare(`DELETE FROM revisions WHERE id = ? AND assessment_id = ?`);
-  let deletedCount = 0;
-  for (const row of staleRows) {
-    deleteStmt.run(row.id, assessmentId);
-    deletedCount++;
-  }
-
-  return deletedCount;
-}
-
-export function enforceEvaluationRetention(
-  assessmentId: string,
-  maxRetained: number = MAX_RETAINED_EVALUATIONS_PER_ASSESSMENT
-): number {
-  const db = getDatabase();
-  db.exec('BEGIN IMMEDIATE');
-  try {
-    const count = enforceEvaluationRetentionInternal(db, assessmentId, maxRetained);
-    db.exec('COMMIT');
-    return count;
   } catch (err) {
     db.exec('ROLLBACK');
     throw err;
@@ -339,9 +276,6 @@ function saveRevisionInternal(db: DatabaseSync, rev: AssessmentRevision): void {
     WHERE id = ?
   `);
   updateStmt.run(rev.commitSha, rev.revisionNumber, rev.createdAt, rev.assessmentId);
-
-  // Enforce evaluation history retention policy: retain only the 10 most recent evaluations atomically
-  enforceEvaluationRetentionInternal(db, rev.assessmentId, MAX_RETAINED_EVALUATIONS_PER_ASSESSMENT);
 }
 
 export function saveRevision(rev: AssessmentRevision): void {
@@ -487,9 +421,29 @@ export function getAssessment(id: string): Assessment | null {
   const tasksStmt = db.prepare(`SELECT task_data_json, status FROM roadmap_tasks WHERE assessment_id = ?`);
   const taskRows = tasksStmt.all(id) as Array<{ task_data_json: string; status: string }>;
   const tasks: GapTask[] = taskRows.map(r => {
-    const task = JSON.parse(r.task_data_json) as GapTask;
-    task.status = r.status as 'pending' | 'in_progress' | 'verified';
-    return task;
+    const task = safeJsonParse<GapTask | null>(r.task_data_json, null);
+    if (task) {
+      task.status = r.status as 'pending' | 'in_progress' | 'verified';
+      return task;
+    }
+    return {
+      id: `task-fallback-${id}`,
+      requirementId: 'unknown',
+      requirementTitle: 'Engineering Task',
+      category: 'general',
+      title: 'Gap Task',
+      description: 'Engineering task',
+      expectedEvidence: '',
+      acceptanceCriteria: [],
+      suggestedFiles: [],
+      projectBrief: {
+        overview: '',
+        suggestedScope: '',
+        implementationHints: [],
+        verificationMethod: ''
+      },
+      status: r.status as 'pending' | 'in_progress' | 'verified'
+    };
   });
 
   // Get activities
@@ -508,7 +462,7 @@ export function getAssessment(id: string): Assessment | null {
     description: r.description as string,
     commitSha: (r.commit_sha as string) || undefined,
     commitMessage: (r.commit_message as string) || undefined,
-    affectedSkills: r.affected_skills_json ? JSON.parse(r.affected_skills_json as string) : undefined,
+    affectedSkills: r.affected_skills_json ? safeJsonParse<string[]>(r.affected_skills_json, []) : undefined,
     timestamp: r.timestamp as string
   }));
 
@@ -581,7 +535,7 @@ function mapRevisionRow(row: Record<string, unknown>): AssessmentRevision {
     commitSha: row.commit_sha as string,
     commitMessage: row.commit_message as string,
     triggerType: row.trigger_type as 'initial' | 'webhook' | 'manual',
-    evidence: JSON.parse(row.evidence_json as string) as RepositoryEvidence[],
+    evidence: safeJsonParse<RepositoryEvidence[]>(row.evidence_json, []),
     demonstratedCount: row.demonstrated_count as number,
     partialCount: row.partial_count as number,
     notDemonstratedCount: row.not_demonstrated_count as number,
@@ -812,9 +766,9 @@ export function listWebhookDeliveries(limit: number = 20): WebhookDeliveryLog[] 
     commitSha: (r.commit_sha as string) || '',
     commitMessage: (r.commit_message as string) || '',
     author: (r.author as string) || '',
-    filesChanged: r.files_changed_json ? JSON.parse(r.files_changed_json as string) : [],
+    filesChanged: safeJsonParse<string[]>(r.files_changed_json, []),
     signatureValid: Boolean(r.signature_valid),
-    affectedRequirements: r.affected_requirements_json ? JSON.parse(r.affected_requirements_json as string) : [],
+    affectedRequirements: safeJsonParse<string[]>(r.affected_requirements_json, []),
     createdAt: r.created_at as string
   }));
 }
