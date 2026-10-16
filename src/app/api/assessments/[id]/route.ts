@@ -8,13 +8,10 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    ensureSampleDataSeeded();
     const { id } = await params;
-    const idVal = validateId(id, 'Assessment ID');
-    if (!idVal.valid || !idVal.cleanId) {
-      return NextResponse.json({ error: idVal.error || 'Invalid assessment ID format.' }, { status: 400 });
-    }
+    const assessment = getAssessment(id);
 
-    const assessment = getAssessment(idVal.cleanId);
     if (!assessment) {
       return NextResponse.json({ error: 'Assessment not found' }, { status: 404 });
     }

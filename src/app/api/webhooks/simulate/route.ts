@@ -2,46 +2,31 @@ import { NextRequest, NextResponse } from 'next/server';
 import crypto from 'node:crypto';
 import { getAssessment } from '@/lib/db';
 import { processPushWebhook } from '@/lib/webhook';
-import { safeParseJson, validateId } from '@/lib/validation';
-import { createErrorResponse } from '@/lib/errors';
 
 export async function POST(req: NextRequest) {
   try {
-    const { data: body, errorResponse } = await safeParseJson(req);
-    if (errorResponse) {
-      return errorResponse;
-    }
-
+    const body = await req.json();
     const {
       assessmentId,
       commitMessage = 'feat(tests): add automated integration tests for charge endpoint',
       author = 'Student Developer',
       files = {},
       simulateInvalidSignature = false
-    } = body as Record<string, unknown>;
+    } = body;
 
-    const idVal = validateId(assessmentId, 'assessmentId');
-    if (!idVal.valid || !idVal.cleanId) {
-      return NextResponse.json({ error: idVal.error || 'assessmentId is required and must be a valid string.' }, { status: 400 });
-    }
-
-    const assessment = getAssessment(idVal.cleanId);
+    const assessment = getAssessment(assessmentId);
     if (!assessment) {
       return NextResponse.json({ error: 'Assessment not found' }, { status: 404 });
     }
 
-    const safeCommitMsg = typeof commitMessage === 'string' ? commitMessage.slice(0, 500) : 'Push update';
-    const safeAuthor = typeof author === 'string' ? author.slice(0, 100) : 'Developer';
-    const safeFiles = (typeof files === 'object' && files !== null && !Array.isArray(files) ? files : {}) as Record<string, string>;
-
     const commitSha = crypto.randomBytes(4).toString('hex');
     const deliveryId = `test-del-${Date.now().toString(36)}-${crypto.randomBytes(3).toString('hex')}`;
-    const changedFilePaths = Object.keys(safeFiles).length > 0
-      ? Object.keys(safeFiles)
+    const changedFilePaths = Object.keys(files).length > 0
+      ? Object.keys(files)
       : ['tests/api.test.ts'];
 
     // If no custom file contents provided, create realistic content based on filename
-    const mockFiles: Record<string, string> = { ...safeFiles };
+    const mockFiles: Record<string, string> = { ...files };
     for (const path of changedFilePaths) {
       if (!mockFiles[path]) {
         if (/test/i.test(path)) {
@@ -107,9 +92,9 @@ CREATE INDEX idx_idempotency_created ON idempotency_keys (created_at);`;
       },
       head_commit: {
         id: commitSha,
-        message: safeCommitMsg,
+        message: commitMessage,
         timestamp: new Date().toISOString(),
-        author: { name: safeAuthor, email: 'student@example.edu' },
+        author: { name: author, email: 'student@example.edu' },
         added: changedFilePaths,
         modified: [],
         removed: []
@@ -117,9 +102,9 @@ CREATE INDEX idx_idempotency_created ON idempotency_keys (created_at);`;
       commits: [
         {
           id: commitSha,
-          message: safeCommitMsg,
+          message: commitMessage,
           timestamp: new Date().toISOString(),
-          author: { name: safeAuthor, email: 'student@example.edu' },
+          author: { name: author, email: 'student@example.edu' },
           added: changedFilePaths,
           modified: [],
           removed: []
@@ -145,17 +130,18 @@ CREATE INDEX idx_idempotency_created ON idempotency_keys (created_at);`;
     const previousRevision = assessment.latestRevision;
 
     const result = await processPushWebhook(rawPayload, headers, {
-      mockFiles
+      mockFiles,
+      secretOverride: secret
     });
 
-    const updatedAssessment = getAssessment(idVal.cleanId);
+    const updatedAssessment = getAssessment(assessmentId);
 
     return NextResponse.json({
       success: result.success,
       message: result.message,
       deliveryId,
       commitSha,
-      commitMessage: safeCommitMsg,
+      commitMessage,
       signatureUsed: signature.slice(0, 15) + '...',
       signatureValid: !simulateInvalidSignature,
       previousRevisionNumber: previousRevision.revisionNumber,
@@ -166,6 +152,8 @@ CREATE INDEX idx_idempotency_created ON idempotency_keys (created_at);`;
       assessment: updatedAssessment
     });
   } catch (error: unknown) {
-    return createErrorResponse(error, 'Simulation failed');
+    const message = error instanceof Error ? error.message : 'Simulation failed';
+    console.error('Webhook simulation error:', error);
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }

@@ -9,12 +9,7 @@ export async function GET(
 ) {
   try {
     const { id } = await params;
-    const idVal = validateId(id, 'Assessment ID');
-    if (!idVal.valid || !idVal.cleanId) {
-      return NextResponse.json({ error: idVal.error || 'Invalid assessment ID format.' }, { status: 400 });
-    }
-
-    const assessment = getAssessment(idVal.cleanId);
+    const assessment = getAssessment(id);
     if (!assessment) {
       return NextResponse.json({ error: 'Assessment not found' }, { status: 404 });
     }
@@ -128,6 +123,7 @@ export async function GET(
       }
     });
   } catch (error: unknown) {
-    return createErrorResponse(error, 'Failed to fetch revision history');
+    const message = error instanceof Error ? error.message : 'Failed to fetch revision history';
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }

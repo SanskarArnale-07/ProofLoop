@@ -7,7 +7,6 @@ import {
   ActivityEvent,
   GapTask,
   InternshipPosting,
-  InternshipRequirement,
   WebhookDeliveryLog,
   RepositoryEvidence,
   RevisionComparison,
@@ -32,9 +31,10 @@ export function getDatabase(): DatabaseSync {
   const dbPath = path.join(dataDir, 'proofloop.db');
   const db = new DatabaseSync(dbPath);
 
-  // Enable WAL mode and foreign keys for performance and data safety
+  // Enable WAL mode, busy timeout, and foreign keys for performance and data safety
   db.exec(`
     PRAGMA journal_mode = WAL;
+    PRAGMA busy_timeout = 5000;
     PRAGMA foreign_keys = ON;
     PRAGMA busy_timeout = 5000;
 
@@ -142,15 +142,6 @@ export function getDatabase(): DatabaseSync {
   return db;
 }
 
-export function safeJsonParse<T>(raw: unknown, fallback: T): T {
-  if (typeof raw !== 'string' || !raw.trim()) return fallback;
-  try {
-    return JSON.parse(raw) as T;
-  } catch {
-    return fallback;
-  }
-}
-
 // Internship operations
 export function saveInternship(internship: InternshipPosting): void {
   const db = getDatabase();
@@ -190,7 +181,7 @@ export function getInternship(id: string): InternshipPosting | null {
     location: (row.location as string) || undefined,
     sourceUrl: row.source_url as string,
     rawText: (row.raw_text as string) || undefined,
-    requirements: safeJsonParse<InternshipRequirement[]>(row.requirements_json, []),
+    requirements: JSON.parse(row.requirements_json as string),
     createdAt: row.created_at as string
   };
 }
@@ -498,29 +489,9 @@ export function getAssessment(id: string): Assessment | null {
   const tasksStmt = db.prepare(`SELECT task_data_json, status FROM roadmap_tasks WHERE assessment_id = ?`);
   const taskRows = tasksStmt.all(id) as Array<{ task_data_json: string; status: string }>;
   const tasks: GapTask[] = taskRows.map(r => {
-    const task = safeJsonParse<GapTask | null>(r.task_data_json, null);
-    if (task) {
-      task.status = r.status as 'pending' | 'in_progress' | 'verified';
-      return task;
-    }
-    return {
-      id: `task-fallback-${id}`,
-      requirementId: 'unknown',
-      requirementTitle: 'Engineering Task',
-      category: 'general',
-      title: 'Gap Task',
-      description: 'Engineering task',
-      expectedEvidence: '',
-      acceptanceCriteria: [],
-      suggestedFiles: [],
-      projectBrief: {
-        overview: '',
-        suggestedScope: '',
-        implementationHints: [],
-        verificationMethod: ''
-      },
-      status: r.status as 'pending' | 'in_progress' | 'verified'
-    };
+    const task = JSON.parse(r.task_data_json) as GapTask;
+    task.status = r.status as 'pending' | 'in_progress' | 'verified';
+    return task;
   });
 
   // Get activities
@@ -539,7 +510,7 @@ export function getAssessment(id: string): Assessment | null {
     description: r.description as string,
     commitSha: (r.commit_sha as string) || undefined,
     commitMessage: (r.commit_message as string) || undefined,
-    affectedSkills: r.affected_skills_json ? safeJsonParse<string[]>(r.affected_skills_json, []) : undefined,
+    affectedSkills: r.affected_skills_json ? JSON.parse(r.affected_skills_json as string) : undefined,
     timestamp: r.timestamp as string
   }));
 
@@ -612,7 +583,7 @@ function mapRevisionRow(row: Record<string, unknown>): AssessmentRevision {
     commitSha: row.commit_sha as string,
     commitMessage: row.commit_message as string,
     triggerType: row.trigger_type as 'initial' | 'webhook' | 'manual',
-    evidence: safeJsonParse<RepositoryEvidence[]>(row.evidence_json, []),
+    evidence: JSON.parse(row.evidence_json as string) as RepositoryEvidence[],
     demonstratedCount: row.demonstrated_count as number,
     partialCount: row.partial_count as number,
     notDemonstratedCount: row.not_demonstrated_count as number,
@@ -1121,9 +1092,9 @@ export function listWebhookDeliveries(limit: number = 20): WebhookDeliveryLog[] 
     commitSha: (r.commit_sha as string) || '',
     commitMessage: (r.commit_message as string) || '',
     author: (r.author as string) || '',
-    filesChanged: safeJsonParse<string[]>(r.files_changed_json, []),
+    filesChanged: r.files_changed_json ? JSON.parse(r.files_changed_json as string) : [],
     signatureValid: Boolean(r.signature_valid),
-    affectedRequirements: safeJsonParse<string[]>(r.affected_requirements_json, []),
+    affectedRequirements: r.affected_requirements_json ? JSON.parse(r.affected_requirements_json as string) : [],
     createdAt: r.created_at as string
   }));
 }

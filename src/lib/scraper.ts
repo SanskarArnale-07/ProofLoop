@@ -4,50 +4,27 @@ import { InternshipRequirement } from './types';
 // Validate URL for SSRF protection
 export function validateUrlSafety(inputUrl: string): { safe: boolean; error?: string; parsedUrl?: URL } {
   try {
-    if (!inputUrl || typeof inputUrl !== 'string' || inputUrl.length > 2048) {
-      return { safe: false, error: 'Invalid URL format or URL exceeds 2048 characters.' };
-    }
-
     const parsed = new URL(inputUrl);
 
     if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
       return { safe: false, error: 'Only HTTP and HTTPS URLs are permitted.' };
     }
 
-    const hostname = parsed.hostname.toLowerCase().replace(/^\[|\]$/g, '');
+    const hostname = parsed.hostname.toLowerCase();
 
-    // Check loopback, private ranges, link-local, cloud metadata, and internal hostnames
+    // Check loopback, private ranges, internal hostnames
     if (
       hostname === 'localhost' ||
-      hostname.endsWith('.localhost') ||
+      hostname === '127.0.0.1' ||
+      hostname === '0.0.0.0' ||
+      hostname === '::1' ||
       hostname.endsWith('.local') ||
       hostname.endsWith('.internal') ||
-      hostname.endsWith('.lan') ||
-      hostname.endsWith('.home') ||
-      hostname === '0.0.0.0' ||
-      hostname.startsWith('0.') ||
-      hostname === '::1' ||
-      hostname === '::' ||
-      hostname.startsWith('fe80:') ||
-      hostname.startsWith('fc00:') ||
-      hostname.startsWith('fd00:') ||
-      hostname.startsWith('127.') ||
       hostname.startsWith('10.') ||
       hostname.startsWith('192.168.') ||
-      hostname.startsWith('169.254.') ||
-      /^172\.(1[6-9]|2[0-9]|3[0-1])\./.test(hostname) ||
-      /^100\.(6[4-9]|[7-9][0-9]|1[0-1][0-9]|12[0-7])\./.test(hostname)
+      /^172\.(1[6-9]|2[0-9]|3[0-1])\./.test(hostname)
     ) {
-      return { safe: false, error: 'Access to private, link-local, or local network addresses is prohibited.' };
-    }
-
-    // Check for restricted ports (block SSH, SMTP, DB, and internal service ports)
-    if (parsed.port) {
-      const portNum = parseInt(parsed.port, 10);
-      const allowedPorts = new Set([80, 443, 8080, 8443, 3000]);
-      if (!allowedPorts.has(portNum)) {
-        return { safe: false, error: `Connection to non-standard port ${portNum} is restricted for security.` };
-      }
+      return { safe: false, error: 'Access to private or local network addresses is prohibited.' };
     }
 
     return { safe: true, parsedUrl: parsed };

@@ -1,23 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { parseGitHubRepoUrl, fetchRepoDetails, fetchUserRepos } from '@/lib/github';
-import { safeParseJson, validateRepoUrlInput, validateGitHubUsername, extractAuthToken } from '@/lib/validation';
-import { createErrorResponse } from '@/lib/errors';
 
 export async function POST(req: NextRequest) {
   try {
-    const { data: body, errorResponse } = await safeParseJson(req);
-    if (errorResponse) {
-      return errorResponse;
+    const body = await req.json();
+    const { repoUrl, token } = body;
+
+    if (!repoUrl) {
+      return NextResponse.json({ error: 'Repository URL is required.' }, { status: 400 });
     }
 
-    const { repoUrl, token: bodyToken } = body as Record<string, unknown>;
-
-    const repoVal = validateRepoUrlInput(repoUrl);
-    if (!repoVal.valid || !repoVal.cleanUrl) {
-      return NextResponse.json({ error: repoVal.error || 'Repository URL is required.' }, { status: 400 });
-    }
-
-    const parsed = parseGitHubRepoUrl(repoVal.cleanUrl);
+    const parsed = parseGitHubRepoUrl(repoUrl);
     if (!parsed) {
       return NextResponse.json(
         { error: 'Invalid GitHub repository format. Expected: https://github.com/owner/repo or owner/repo' },
@@ -25,7 +18,6 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const token = extractAuthToken(req, bodyToken);
     const repoInfo = await fetchRepoDetails(parsed.owner, parsed.repo, token);
 
     return NextResponse.json({
@@ -33,24 +25,29 @@ export async function POST(req: NextRequest) {
       repo: repoInfo
     });
   } catch (error: unknown) {
-    return createErrorResponse(error, 'Failed to inspect GitHub repository.', 400);
+    const message = error instanceof Error ? error.message : 'Failed to inspect GitHub repository.';
+    console.error('GitHub repo validation error:', error);
+    return NextResponse.json(
+      { error: message },
+      { status: 400 }
+    );
   }
 }
 
 export async function GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url);
-    const rawUsername = searchParams.get('username');
+    const username = searchParams.get('username');
+    const token = searchParams.get('token') || undefined;
 
-    const userVal = validateGitHubUsername(rawUsername);
-    if (!userVal.valid || !userVal.cleanUsername) {
-      return NextResponse.json({ error: userVal.error || 'Username parameter required.' }, { status: 400 });
+    if (!username) {
+      return NextResponse.json({ error: 'Username parameter required.' }, { status: 400 });
     }
 
-    const token = extractAuthToken(req, searchParams.get('token'));
-    const repos = await fetchUserRepos(userVal.cleanUsername, token);
+    const repos = await fetchUserRepos(username, token);
     return NextResponse.json({ success: true, repos });
   } catch (error: unknown) {
-    return createErrorResponse(error, 'Failed to fetch repositories', 500);
+    const message = error instanceof Error ? error.message : 'Failed to fetch repositories';
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }

@@ -1,7 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getAssessment, compareRevisions } from '@/lib/db';
-import { validateId, validatePositiveInteger } from '@/lib/validation';
-import { createErrorResponse } from '@/lib/errors';
 
 export async function GET(
   req: NextRequest,
@@ -9,12 +7,7 @@ export async function GET(
 ) {
   try {
     const { id } = await params;
-    const idVal = validateId(id, 'Assessment ID');
-    if (!idVal.valid || !idVal.cleanId) {
-      return NextResponse.json({ error: idVal.error || 'Invalid assessment ID format.' }, { status: 400 });
-    }
-
-    const assessment = getAssessment(idVal.cleanId);
+    const assessment = getAssessment(id);
     if (!assessment) {
       return NextResponse.json({ error: 'Assessment not found' }, { status: 404 });
     }
