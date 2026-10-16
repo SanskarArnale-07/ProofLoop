@@ -54,9 +54,25 @@ function HistoryContent() {
     );
   }
 
+  const handleReassessed = async (updated: Assessment) => {
+    setAssessment(updated);
+    try {
+      const revRes = await fetch(`/api/assessments/${assessmentId}/revisions`);
+      const revData = await revRes.json();
+      if (revData.success && revData.revisions) {
+        setRevisions(revData.revisions);
+        if (revData.revisions.length > 0) {
+          setSelectedRevision(revData.revisions[0]);
+        }
+      }
+    } catch (err) {
+      console.error('Error reloading revisions after reassessment:', err);
+    }
+  };
+
   return (
     <div className="flex-1 flex flex-col min-w-0">
-      <Header assessment={assessment} onReassessed={(up) => setAssessment(up)} />
+      <Header assessment={assessment} onReassessed={handleReassessed} showReassess={true} />
 
       <div className="p-8 max-w-7xl mx-auto w-full space-y-6">
         <div>

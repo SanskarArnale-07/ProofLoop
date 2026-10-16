@@ -8,9 +8,10 @@ import { Assessment } from '@/lib/types';
 interface HeaderProps {
   assessment: Assessment;
   onReassessed?: (updated: Assessment) => void;
+  showReassess?: boolean;
 }
 
-export function Header({ assessment, onReassessed }: HeaderProps) {
+export function Header({ assessment, onReassessed, showReassess = false }: HeaderProps) {
   const [isReassessing, setIsReassessing] = useState(false);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
 
@@ -79,15 +80,17 @@ export function Header({ assessment, onReassessed }: HeaderProps) {
             </span>
           )}
 
-          <button
-            onClick={handleManualReassessment}
-            disabled={isReassessing}
-            className="flex items-center space-x-2 px-3.5 py-2 border border-[#584638] bg-[#30251F] hover:bg-[#3A2D26] text-xs font-mono rounded font-medium text-[#F5F0E5] transition-colors disabled:opacity-50"
-            title="Re-run assessment against repository code"
-          >
-            <RefreshCw className={`w-3.5 h-3.5 ${isReassessing ? 'animate-spin' : ''}`} />
-            <span>{isReassessing ? 'Reassessing...' : 'Reassess Scope'}</span>
-          </button>
+          {showReassess && (
+            <button
+              onClick={handleManualReassessment}
+              disabled={isReassessing}
+              className="flex items-center space-x-2 px-3.5 py-2 border border-[#584638] bg-[#30251F] hover:bg-[#3A2D26] text-xs font-mono rounded font-medium text-[#F5F0E5] transition-colors disabled:opacity-50"
+              title="Re-run assessment against repository code"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${isReassessing ? 'animate-spin' : ''}`} />
+              <span>{isReassessing ? 'Reassessing...' : 'Reassess Scope'}</span>
+            </button>
+          )}
         </div>
       </div>
     </header>
