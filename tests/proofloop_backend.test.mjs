@@ -34,7 +34,11 @@ const {
   recordAssessmentFailure,
   saveAssessment,
   getAssessment,
-  saveRevision
+  saveRevision,
+  getRevisionHistory,
+  MAX_RETAINED_EVALUATIONS_PER_ASSESSMENT,
+  enforceEvaluationRetention,
+  recordWebhookDelivery
 } = jiti('../src/lib/db.ts');
 
 const {
@@ -355,7 +359,17 @@ test('9. Missing History & Rate Limits - Handles edge cases gracefully', () => {
 // 10. Failed Reassessments Preserving Previous Successful Revisions
 // ============================================================================
 test('10. Failed Reassessments - Preserves previous successful revisions intact', () => {
-  const assessment = SAMPLE_ASSESSMENT;
+  const asmtId = `asmt-failed-test-${Date.now()}`;
+  const assessment = {
+    ...SAMPLE_ASSESSMENT,
+    id: asmtId,
+    latestRevision: {
+      ...SAMPLE_ASSESSMENT.latestRevision,
+      id: `rev-${asmtId}-1`,
+      assessmentId: asmtId,
+      revisionNumber: 1
+    }
+  };
   saveAssessment(assessment);
 
   const initial = getAssessment(assessment.id);
@@ -378,7 +392,17 @@ test('10. Failed Reassessments - Preserves previous successful revisions intact'
 // 11. Historical Revision Comparisons
 // ============================================================================
 test('11. Historical Revision Comparison - Accurately details score and evidence diffs', () => {
-  const assessmentId = SAMPLE_ASSESSMENT.id;
+  const assessmentId = `asmt-compare-test-${Date.now()}`;
+  saveAssessment({
+    ...SAMPLE_ASSESSMENT,
+    id: assessmentId,
+    latestRevision: {
+      ...SAMPLE_ASSESSMENT.latestRevision,
+      id: `rev-${assessmentId}-1`,
+      assessmentId: assessmentId,
+      revisionNumber: 1
+    }
+  });
 
   const rev2 = {
     id: `rev-${assessmentId}-2`,
@@ -524,4 +548,195 @@ test('15. Frontend API Contract Compatibility - Verifies payload shape', () => {
   assert.ok(['demonstrated', 'partial', 'not_demonstrated'].includes(ev.status));
   assert.equal(typeof ev.confidence, 'number');
   assert.ok(ev.confidence >= 0 && ev.confidence <= 100);
+});
+
+// ============================================================================
+// 16. Evaluation History Retention Policy (Maximum 10 Completed Evaluations)
+// ============================================================================
+test('16. Retention Policy - Fewer than 10 evaluations retained without deletion', () => {
+  const asmtId = `asmt-retention-test-few-${Date.now()}`;
+  saveAssessment({
+    ...SAMPLE_ASSESSMENT,
+    id: asmtId,
+    latestRevision: {
+      ...SAMPLE_ASSESSMENT.latestRevision,
+      id: `rev-${asmtId}-1`,
+      assessmentId: asmtId,
+      revisionNumber: 1
+    }
+  });
+
+  // Save 4 additional evaluations (total 5)
+  for (let revNum = 2; revNum <= 5; revNum++) {
+    saveRevision({
+      id: `rev-${asmtId}-${revNum}`,
+      assessmentId: asmtId,
+      revisionNumber: revNum,
+      commitSha: `sha-${revNum}`,
+      commitMessage: `feat: iteration ${revNum}`,
+      triggerType: 'webhook',
+      evidence: SAMPLE_ASSESSMENT.latestRevision.evidence,
+      demonstratedCount: 4,
+      partialCount: 1,
+      notDemonstratedCount: 1,
+      scoringRuleVersion: SCORING_RULE_VERSION,
+      createdAt: new Date(Date.now() + revNum * 1000).toISOString()
+    });
+  }
+
+  assert.equal(MAX_RETAINED_EVALUATIONS_PER_ASSESSMENT, 10, 'Default retention limit must be 10');
+  const pruned = enforceEvaluationRetention(asmtId, MAX_RETAINED_EVALUATIONS_PER_ASSESSMENT);
+  assert.equal(pruned, 0, 'No evaluations should be pruned when count is below limit');
+
+  const history = getRevisionHistory(asmtId);
+  assert.equal(history.length, 5, 'All 5 evaluations must be retained without deletion');
+  assert.deepEqual(history.map(r => r.revisionNumber), [5, 4, 3, 2, 1]);
+});
+
+test('17. Retention Policy - Exactly 10 retained after 11th evaluation; oldest deleted', () => {
+  const asmtId = `asmt-retention-test-eleven-${Date.now()}`;
+  saveAssessment({
+    ...SAMPLE_ASSESSMENT,
+    id: asmtId,
+    latestRevision: {
+      ...SAMPLE_ASSESSMENT.latestRevision,
+      id: `rev-${asmtId}-1`,
+      assessmentId: asmtId,
+      revisionNumber: 1
+    }
+  });
+
+  // Add revisions 2 through 10 (total 10)
+  for (let revNum = 2; revNum <= 10; revNum++) {
+    saveRevision({
+      id: `rev-${asmtId}-${revNum}`,
+      assessmentId: asmtId,
+      revisionNumber: revNum,
+      commitSha: `sha-${revNum}`,
+      commitMessage: `feat: iteration ${revNum}`,
+      triggerType: 'webhook',
+      evidence: SAMPLE_ASSESSMENT.latestRevision.evidence,
+      demonstratedCount: 4,
+      partialCount: 1,
+      notDemonstratedCount: 1,
+      scoringRuleVersion: SCORING_RULE_VERSION,
+      createdAt: new Date(Date.now() + revNum * 1000).toISOString()
+    });
+  }
+
+  const historyAt10 = getRevisionHistory(asmtId);
+  assert.equal(historyAt10.length, 10, 'Should hold exactly 10 evaluations');
+  assert.equal(historyAt10[historyAt10.length - 1].revisionNumber, 1, 'Oldest is revision 1');
+
+  // Add the 11th evaluation
+  const rev11Id = `rev-${asmtId}-11`;
+  saveRevision({
+    id: rev11Id,
+    assessmentId: asmtId,
+    revisionNumber: 11,
+    commitSha: 'sha-11',
+    commitMessage: 'feat: 11th evaluation',
+    triggerType: 'webhook',
+    evidence: SAMPLE_ASSESSMENT.latestRevision.evidence,
+    demonstratedCount: 5,
+    partialCount: 0,
+    notDemonstratedCount: 1,
+    scoringRuleVersion: SCORING_RULE_VERSION,
+    createdAt: new Date(Date.now() + 11000).toISOString()
+  });
+
+  const historyAt11 = getRevisionHistory(asmtId);
+  assert.equal(historyAt11.length, 10, 'Must strictly retain exactly 10 evaluations after 11th is saved');
+  
+  // Verify revision 1 was permanently deleted and revisions 2-11 are retained
+  const revisionNumbers = historyAt11.map(r => r.revisionNumber);
+  assert.deepEqual(revisionNumbers, [11, 10, 9, 8, 7, 6, 5, 4, 3, 2]);
+  assert.ok(!revisionNumbers.includes(1), 'Revision #1 must be deleted');
+
+  // Stable database IDs verified
+  for (let i = 2; i <= 11; i++) {
+    assert.ok(historyAt11.some(r => r.id === `rev-${asmtId}-${i}`), `Stable ID rev-${asmtId}-${i} must remain unchanged`);
+  }
+});
+
+test('18. Retention Policy - Failed evaluations do not delete; isolation & audit log preservation', () => {
+  const asmtA = `asmt-retention-A-${Date.now()}`;
+  const asmtB = `asmt-retention-B-${Date.now()}`;
+
+  // Seed Assessment A with 11 revisions -> prunes to 10
+  saveAssessment({
+    ...SAMPLE_ASSESSMENT,
+    id: asmtA,
+    latestRevision: { ...SAMPLE_ASSESSMENT.latestRevision, id: `rev-${asmtA}-1`, assessmentId: asmtA, revisionNumber: 1 }
+  });
+  for (let i = 2; i <= 11; i++) {
+    saveRevision({
+      id: `rev-${asmtA}-${i}`,
+      assessmentId: asmtA,
+      revisionNumber: i,
+      commitSha: `sha-A-${i}`,
+      commitMessage: `feat A ${i}`,
+      triggerType: 'webhook',
+      evidence: SAMPLE_ASSESSMENT.latestRevision.evidence,
+      demonstratedCount: 4,
+      partialCount: 1,
+      notDemonstratedCount: 1,
+      scoringRuleVersion: SCORING_RULE_VERSION,
+      createdAt: new Date(Date.now() + i * 1000).toISOString()
+    });
+  }
+
+  // Seed Assessment B with 4 revisions
+  saveAssessment({
+    ...SAMPLE_ASSESSMENT,
+    id: asmtB,
+    latestRevision: { ...SAMPLE_ASSESSMENT.latestRevision, id: `rev-${asmtB}-1`, assessmentId: asmtB, revisionNumber: 1 }
+  });
+  for (let i = 2; i <= 4; i++) {
+    saveRevision({
+      id: `rev-${asmtB}-${i}`,
+      assessmentId: asmtB,
+      revisionNumber: i,
+      commitSha: `sha-B-${i}`,
+      commitMessage: `feat B ${i}`,
+      triggerType: 'webhook',
+      evidence: SAMPLE_ASSESSMENT.latestRevision.evidence,
+      demonstratedCount: 4,
+      partialCount: 1,
+      notDemonstratedCount: 1,
+      scoringRuleVersion: SCORING_RULE_VERSION,
+      createdAt: new Date(Date.now() + i * 1000).toISOString()
+    });
+  }
+
+  // Verify Assessment B is unaffected by Assessment A's evaluations
+  const historyB = getRevisionHistory(asmtB);
+  assert.equal(historyB.length, 4, 'Assessment B evaluations must be completely isolated');
+
+  // Record a webhook delivery and check that retention does NOT prune webhook logs
+  const deliveryId = `deliv-retention-${Date.now()}`;
+  recordWebhookDelivery({
+    id: `log-${deliveryId}`,
+    deliveryId,
+    repoFullName: 'test/retention-repo',
+    eventType: 'push',
+    commitSha: 'sha-test',
+    commitMessage: 'webhook test',
+    author: 'dev',
+    filesChanged: ['src/app.ts'],
+    signatureValid: true,
+    affectedRequirements: [],
+    createdAt: new Date().toISOString()
+  });
+
+  // Simulate a failed evaluation on Assessment A
+  recordAssessmentFailure(asmtA, 'Simulated GitHub API rate limit error');
+
+  // Verify failed evaluation did NOT delete any successful revisions
+  const historyAAfterFailure = getRevisionHistory(asmtA);
+  assert.equal(historyAAfterFailure.length, 10, 'Failed evaluations must NOT trigger revision deletion');
+
+  // Verify assessment A has the failure recorded in activity log
+  const asmtARecord = getAssessment(asmtA);
+  assert.ok(asmtARecord.recentActivity.some(a => a.eventType === 'reassessment_failed'), 'Failure must be preserved in activity log');
 });

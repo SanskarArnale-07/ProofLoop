@@ -143,8 +143,15 @@ export function getDatabase(): DatabaseSync {
 export function saveInternship(internship: InternshipPosting): void {
   const db = getDatabase();
   const stmt = db.prepare(`
-    INSERT OR REPLACE INTO internships (id, title, company, location, source_url, raw_text, requirements_json, created_at)
+    INSERT INTO internships (id, title, company, location, source_url, raw_text, requirements_json, created_at)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(id) DO UPDATE SET
+      title = excluded.title,
+      company = excluded.company,
+      location = excluded.location,
+      source_url = excluded.source_url,
+      raw_text = excluded.raw_text,
+      requirements_json = excluded.requirements_json
   `);
   stmt.run(
     internship.id,
@@ -185,12 +192,23 @@ export function saveAssessment(assessment: Assessment): void {
     saveInternship(assessment.internship);
 
     const stmt = db.prepare(`
-      INSERT OR REPLACE INTO assessments (
+      INSERT INTO assessments (
         id, internship_id, repo_full_name, repo_url, default_branch,
         latest_commit_sha, current_revision_number, status,
         analysis_scope_json, ai_signals_json, created_at, updated_at
       )
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(id) DO UPDATE SET
+        internship_id = excluded.internship_id,
+        repo_full_name = excluded.repo_full_name,
+        repo_url = excluded.repo_url,
+        default_branch = excluded.default_branch,
+        latest_commit_sha = excluded.latest_commit_sha,
+        current_revision_number = excluded.current_revision_number,
+        status = excluded.status,
+        analysis_scope_json = excluded.analysis_scope_json,
+        ai_signals_json = excluded.ai_signals_json,
+        updated_at = excluded.updated_at
     `);
 
     stmt.run(
@@ -220,11 +238,65 @@ export function saveAssessment(assessment: Assessment): void {
 
     if (assessment.recentActivity && assessment.recentActivity.length > 0) {
       for (const act of assessment.recentActivity) {
-        addActivityEventInternal(db, act);
+        addActivityEventInternal(db, { ...act, assessmentId: assessment.id });
       }
     }
 
     db.exec('COMMIT');
+  } catch (err) {
+    db.exec('ROLLBACK');
+    throw err;
+  }
+}
+
+export const MAX_RETAINED_EVALUATIONS_PER_ASSESSMENT = 10;
+
+/**
+ * Enforces the evaluation history retention policy:
+ * Retains at most maxRetained (default: 10) completed evaluations per assessment history.
+ * Any older evaluations beyond the newest maxRetained are permanently deleted.
+ * Must be executed within the active database transaction for atomicity.
+ */
+export function enforceEvaluationRetentionInternal(
+  db: DatabaseSync,
+  assessmentId: string,
+  maxRetained: number = MAX_RETAINED_EVALUATIONS_PER_ASSESSMENT
+): number {
+  if (!assessmentId || maxRetained <= 0) return 0;
+
+  // Retrieve IDs of revisions exceeding the retention threshold for this specific assessment
+  const staleStmt = db.prepare(`
+    SELECT id FROM revisions
+    WHERE assessment_id = ?
+    ORDER BY revision_number DESC, created_at DESC
+    LIMIT -1 OFFSET ?
+  `);
+  const staleRows = staleStmt.all(assessmentId, maxRetained) as Array<{ id: string }>;
+
+  if (staleRows.length === 0) {
+    return 0;
+  }
+
+  const deleteStmt = db.prepare(`DELETE FROM revisions WHERE id = ? AND assessment_id = ?`);
+  let deletedCount = 0;
+  for (const row of staleRows) {
+    deleteStmt.run(row.id, assessmentId);
+    deletedCount++;
+  }
+
+  return deletedCount;
+}
+
+export function enforceEvaluationRetention(
+  assessmentId: string,
+  maxRetained: number = MAX_RETAINED_EVALUATIONS_PER_ASSESSMENT
+): number {
+  const db = getDatabase();
+  db.exec('BEGIN IMMEDIATE');
+  try {
+    const count = enforceEvaluationRetentionInternal(db, assessmentId, maxRetained);
+    db.exec('COMMIT');
+    return count;
   } catch (err) {
     db.exec('ROLLBACK');
     throw err;
@@ -266,6 +338,9 @@ function saveRevisionInternal(db: DatabaseSync, rev: AssessmentRevision): void {
     WHERE id = ?
   `);
   updateStmt.run(rev.commitSha, rev.revisionNumber, rev.createdAt, rev.assessmentId);
+
+  // Enforce evaluation history retention policy: retain only the 10 most recent evaluations atomically
+  enforceEvaluationRetentionInternal(db, rev.assessmentId, MAX_RETAINED_EVALUATIONS_PER_ASSESSMENT);
 }
 
 export function saveRevision(rev: AssessmentRevision): void {
