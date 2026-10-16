@@ -74,7 +74,7 @@ export function redactSensitiveContent(content: string): string {
     .replace(/-----BEGIN (?:RSA |EC |DSA |OPENSSH )?PRIVATE KEY-----[\s\S]*?-----END (?:RSA |EC |DSA |OPENSSH )?PRIVATE KEY-----/g, '[REDACTED_PRIVATE_KEY]')
     .replace(/(?:password|secret|apikey|api_key|access_token|auth_token)\s*[:=]\s*["'](?!(?:\[REDACTED))[^"'\n]{6,}["']/gi, match => {
       const parts = match.split(/[:=]/);
-      return `${parts[0]}= "[REDACTED]"`;
+      return `${parts[0]}= "[REDACTED_API_KEY]"`;
     });
 }
 
