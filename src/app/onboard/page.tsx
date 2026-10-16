@@ -8,15 +8,11 @@ import {
   ArrowLeft,
   CheckCircle2,
   AlertCircle,
-  Building2,
   Globe,
-  Sparkles,
-  FileCode2,
-  Trash2,
-  Plus
+  Sparkles
 } from 'lucide-react';
 import { GithubIcon } from '@/components/GithubIcon';
-import { InternshipPosting, InternshipRequirement } from '@/lib/types';
+import { InternshipPosting } from '@/lib/types';
 import { AnalysisTransition } from '@/components/AnalysisTransition';
 
 export default function OnboardPage() {
@@ -33,11 +29,19 @@ export default function OnboardPage() {
   const [manualText, setManualText] = useState('');
   const [internshipData, setInternshipData] = useState<InternshipPosting | null>(null);
 
+interface VerifiedRepoDetails {
+  fullName?: string;
+  defaultBranch?: string;
+  latestCommitSha?: string;
+  latestCommitMessage?: string;
+  [key: string]: unknown;
+}
+
   // Step 2: GitHub
   const [repoInput, setRepoInput] = useState('');
   const [isVerifyingRepo, setIsVerifyingRepo] = useState(false);
   const [repoError, setRepoError] = useState<string | null>(null);
-  const [repoDetails, setRepoDetails] = useState<any | null>(null);
+  const [repoDetails, setRepoDetails] = useState<VerifiedRepoDetails | null>(null);
 
   // Step 3: Analysis Transition
   const [isAnalyzing, setIsAnalyzing] = useState(false);
@@ -101,8 +105,9 @@ export default function OnboardPage() {
         setInternshipData(data.posting);
         setStep(2);
       }
-    } catch (err: any) {
-      setExtractError(err.message || 'Network error extracting posting.');
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Network error extracting posting.';
+      setExtractError(message);
       setManualFallbackOpen(true);
     } finally {
       setIsExtracting(false);
@@ -128,8 +133,9 @@ export default function OnboardPage() {
         setRepoDetails(data.repo);
         setStep(3);
       }
-    } catch (err: any) {
-      setRepoError(err.message || 'Error communicating with GitHub validation API.');
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Error communicating with GitHub validation API.';
+      setRepoError(message);
     } finally {
       setIsVerifyingRepo(false);
     }
@@ -167,8 +173,9 @@ export default function OnboardPage() {
           router.push(`/dashboard?id=${data.assessmentId}`);
         }, 1500);
       }
-    } catch (err: any) {
-      setAnalysisError(err.message || 'Unexpected failure during repository analysis.');
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Unexpected failure during repository analysis.';
+      setAnalysisError(message);
       setIsAnalyzing(false);
     }
   };
@@ -230,7 +237,7 @@ export default function OnboardPage() {
               </h1>
               <p className="text-xs text-zinc-600 dark:text-zinc-400 font-sans mt-2 leading-relaxed">
                 Provide a real job or internship posting URL. We fetch the page server-side, preserve the source URL,
-                and extract the technical requirements you'll need to demonstrate in code.
+                and extract the technical requirements you&apos;ll need to demonstrate in code.
               </p>
             </div>
 

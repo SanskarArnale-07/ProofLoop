@@ -20,16 +20,16 @@ export async function POST(req: NextRequest) {
       newRevisionNumber: result.newRevisionNumber,
       promotedSkills: result.promotedSkills
     });
-  } catch (error: any) {
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : 'Webhook internal processing error.';
     console.error('Webhook execution failure:', error);
     return NextResponse.json(
-      { error: error.message || 'Webhook internal processing error.' },
+      { error: message },
       { status: 500 }
     );
   }
 }
 
-// Support GET for testing connectivity
 export async function GET() {
   return NextResponse.json({
     status: 'active',

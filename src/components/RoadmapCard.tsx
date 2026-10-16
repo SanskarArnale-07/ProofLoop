@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { ChevronDown, ChevronUp, Code2, CheckSquare, Sparkles, FileText, ArrowRight } from 'lucide-react';
+import { ChevronDown, ChevronUp, Code2, CheckSquare, Sparkles, ArrowRight } from 'lucide-react';
 import { GapTask } from '@/lib/types';
 
 interface RoadmapCardProps {

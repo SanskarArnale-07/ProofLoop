@@ -42,7 +42,29 @@ function WebhookLabContent() {
   };
 
   useEffect(() => {
-    loadData();
+    let isMounted = true;
+    async function init() {
+      try {
+        const [asmtRes, delRes] = await Promise.all([
+          fetch(`/api/assessments/${assessmentId}`),
+          fetch('/api/webhooks/deliveries')
+        ]);
+        const asmtData = await asmtRes.json();
+        const delData = await delRes.json();
+        if (isMounted) {
+          if (asmtData.success) setAssessment(asmtData.assessment);
+          if (delData.success) setDeliveries(delData.deliveries || []);
+        }
+      } catch (err) {
+        console.error('Error loading webhook lab:', err);
+      } finally {
+        if (isMounted) setLoading(false);
+      }
+    }
+    init();
+    return () => {
+      isMounted = false;
+    };
   }, [assessmentId]);
 
   if (loading || !assessment) {
@@ -139,7 +161,7 @@ function WebhookLabContent() {
 
           {deliveries.length === 0 ? (
             <div className="p-8 bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded text-center text-xs font-mono text-zinc-500">
-              No webhook events recorded yet. Click "Launch Webhook Dispatch Simulator" above to test the pipeline.
+              No webhook events recorded yet. Click &quot;Launch Webhook Dispatch Simulator&quot; above to test the pipeline.
             </div>
           ) : (
             <div className="border border-zinc-200 dark:border-zinc-800 rounded overflow-hidden bg-white dark:bg-zinc-950 font-mono text-xs">

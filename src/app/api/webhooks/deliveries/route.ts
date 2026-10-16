@@ -5,7 +5,8 @@ export async function GET() {
   try {
     const logs = listWebhookDeliveries(30);
     return NextResponse.json({ success: true, deliveries: logs });
-  } catch (error: any) {
-    return NextResponse.json({ error: error.message || 'Failed to list webhook logs' }, { status: 500 });
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : 'Failed to list webhook logs';
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }

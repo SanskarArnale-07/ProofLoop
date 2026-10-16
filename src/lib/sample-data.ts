@@ -1,5 +1,7 @@
 import { Assessment, InternshipPosting } from './types';
 import { saveAssessment, getAssessment } from './db';
+import { SCORING_RULE_VERSION } from './scoring';
+import { AI_SIGNAL_DISCLAIMER } from './ai-signals';
 
 export const SAMPLE_INTERNSHIP: InternshipPosting = {
   id: 'sample-stripe-backend',
@@ -71,6 +73,27 @@ export const SAMPLE_INTERNSHIP: InternshipPosting = {
   createdAt: '2026-10-14T08:00:00.000Z'
 };
 
+const sampleScope = {
+  commitsAnalyzed: 12,
+  totalCommitsChecked: 12,
+  filesInspected: 18,
+  branch: 'main',
+  truncated: false,
+  scopeDescription: 'Inspected 18 repository files and 12 commits on branch main.'
+};
+
+const sampleAiSignals = {
+  overallAssessment: 'insufficient_evidence' as const,
+  findings: [],
+  summary: 'No meaningful AI-authorship signals detected across analyzed commits and comments.',
+  limitationNotice: AI_SIGNAL_DISCLAIMER,
+  analyzedArtifactsCount: {
+    commits: 12,
+    comments: 24,
+    docFiles: 2
+  }
+};
+
 export const SAMPLE_ASSESSMENT: Assessment = {
   id: 'sample-assessment-stripe',
   internship: SAMPLE_INTERNSHIP,
@@ -94,13 +117,19 @@ export const SAMPLE_ASSESSMENT: Assessment = {
     demonstratedCount: 4,
     partialCount: 1,
     notDemonstratedCount: 2,
+    scoringRuleVersion: SCORING_RULE_VERSION,
+    analysisScope: sampleScope,
+    aiSignals: sampleAiSignals,
     createdAt: '2026-10-14T10:15:00.000Z',
     evidence: [
       {
         requirementId: 'req-api',
         requirementTitle: 'REST API Development & Validation',
         status: 'demonstrated',
+        evidenceType: 'direct_implementation',
+        evidenceStrength: 'strong',
         explanation: 'Demonstrated in src/routes/payments.ts. Implements structured HTTP POST/GET route handlers with strict request body validation, idempotency headers, and explicit HTTP error mapping.',
+        humanReadableExplanation: 'Demonstrated in src/routes/payments.ts with strict request body validation and idempotency handling.',
         repoFullName: 'alexchen/payment-orchestrator',
         filePath: 'src/routes/payments.ts',
         lineStart: 34,
@@ -133,13 +162,30 @@ export const SAMPLE_ASSESSMENT: Assessment = {
   return new Response(JSON.stringify(charge), { status: 201 });
 }`,
         commitSha: '9e41b2c',
-        confidence: 96
+        confidence: 96,
+        relevantCommits: ['9e41b2c', '7d22a10'],
+        relevantFiles: ['src/routes/payments.ts'],
+        scoreBreakdown: {
+          score: 85,
+          rank: 1,
+          ruleVersion: SCORING_RULE_VERSION,
+          basePoints: 55,
+          testBonus: 15,
+          continuityBonus: 15,
+          factors: [
+            'Verified concrete implementation pattern (+55 pts)',
+            'Corroborated across 2 distinct commits (+15 pts)'
+          ]
+        }
       },
       {
         requirementId: 'req-db',
         requirementTitle: 'Database Schema Design & SQL Queries',
         status: 'demonstrated',
+        evidenceType: 'direct_implementation',
+        evidenceStrength: 'strong',
         explanation: 'Demonstrated in db/migrations/001_initial_ledger.sql. Contains normalized relational schemas with foreign key constraints, composite unique indexes, and audit timestamps.',
+        humanReadableExplanation: 'Normalized SQL relational schemas with foreign key constraints in db/migrations/001_initial_ledger.sql.',
         repoFullName: 'alexchen/payment-orchestrator',
         filePath: 'db/migrations/001_initial_ledger.sql',
         lineStart: 1,
@@ -158,13 +204,30 @@ export const SAMPLE_ASSESSMENT: Assessment = {
 CREATE UNIQUE INDEX idx_txn_entry ON ledger_entries (transaction_id, entry_type);
 CREATE INDEX idx_account_created ON ledger_entries (account_id, created_at DESC);`,
         commitSha: '9e41b2c',
-        confidence: 94
+        confidence: 94,
+        relevantCommits: ['9e41b2c'],
+        relevantFiles: ['db/migrations/001_initial_ledger.sql'],
+        scoreBreakdown: {
+          score: 75,
+          rank: 2,
+          ruleVersion: SCORING_RULE_VERSION,
+          basePoints: 55,
+          testBonus: 15,
+          continuityBonus: 5,
+          factors: [
+            'Verified concrete implementation pattern (+55 pts)',
+            'Single commit verification (+5 pts)'
+          ]
+        }
       },
       {
         requirementId: 'req-typescript',
         requirementTitle: 'TypeScript / Strict Static Typing',
         status: 'demonstrated',
+        evidenceType: 'direct_implementation',
+        evidenceStrength: 'strong',
         explanation: 'Demonstrated across tsconfig.json and codebase with strictNullChecks and noImplicitAny enabled.',
+        humanReadableExplanation: 'Strict TypeScript configuration with strictNullChecks and typed interfaces.',
         repoFullName: 'alexchen/payment-orchestrator',
         filePath: 'tsconfig.json',
         lineStart: 1,
@@ -183,13 +246,27 @@ CREATE INDEX idx_account_created ON ledger_entries (account_id, created_at DESC)
   }
 }`,
         commitSha: '9e41b2c',
-        confidence: 98
+        confidence: 98,
+        relevantCommits: ['9e41b2c'],
+        relevantFiles: ['tsconfig.json'],
+        scoreBreakdown: {
+          score: 75,
+          rank: 3,
+          ruleVersion: SCORING_RULE_VERSION,
+          basePoints: 55,
+          testBonus: 15,
+          continuityBonus: 5,
+          factors: ['Verified concrete implementation pattern (+55 pts)']
+        }
       },
       {
         requirementId: 'req-cicd',
         requirementTitle: 'CI/CD Pipelines & Automation',
         status: 'demonstrated',
+        evidenceType: 'configuration',
+        evidenceStrength: 'strong',
         explanation: 'Demonstrated in .github/workflows/ci.yml. Configures automated pull-request validation including type-checking, linting, and build steps.',
+        humanReadableExplanation: 'Automated CI workflow in .github/workflows/ci.yml with multi-step pipeline.',
         repoFullName: 'alexchen/payment-orchestrator',
         filePath: '.github/workflows/ci.yml',
         lineStart: 1,
@@ -214,13 +291,27 @@ jobs:
       - run: npm run lint
       - run: npx tsc --noEmit`,
         commitSha: '9e41b2c',
-        confidence: 95
+        confidence: 95,
+        relevantCommits: ['9e41b2c'],
+        relevantFiles: ['.github/workflows/ci.yml'],
+        scoreBreakdown: {
+          score: 75,
+          rank: 4,
+          ruleVersion: SCORING_RULE_VERSION,
+          basePoints: 55,
+          testBonus: 15,
+          continuityBonus: 5,
+          factors: ['Verified concrete configuration pattern (+55 pts)']
+        }
       },
       {
         requirementId: 'req-git',
         requirementTitle: 'Git Version Control & Documentation',
         status: 'partial',
+        evidenceType: 'documentation',
+        evidenceStrength: 'weak',
         explanation: 'Partial evidence: Maintains .gitignore and clean git commits, but project README lacks architecture notes, deployment guides, or contribution workflow.',
+        humanReadableExplanation: 'Basic repository tracked under git; README lacks full architectural documentation.',
         repoFullName: 'alexchen/payment-orchestrator',
         filePath: 'README.md',
         lineStart: 1,
@@ -229,25 +320,64 @@ jobs:
 Internal proof of concept payment gateway integration.
 WIP.`,
         commitSha: '9e41b2c',
-        confidence: 70
+        confidence: 70,
+        relevantCommits: ['9e41b2c'],
+        relevantFiles: ['README.md'],
+        scoreBreakdown: {
+          score: 40,
+          rank: 5,
+          ruleVersion: SCORING_RULE_VERSION,
+          basePoints: 35,
+          testBonus: 0,
+          continuityBonus: 5,
+          factors: ['Documentation presence without comprehensive architecture notes (+35 pts)']
+        }
       },
       {
         requirementId: 'req-testing',
         requirementTitle: 'Automated Testing & Coverage',
         status: 'not_demonstrated',
+        evidenceType: 'none',
+        evidenceStrength: 'none',
         explanation: 'Not demonstrated in the analyzed repositories. No automated unit tests, integration test suites, or test runner frameworks (Jest, Vitest) were found in the analyzed tree.',
+        humanReadableExplanation: 'No automated test files or assertions detected.',
         repoFullName: 'alexchen/payment-orchestrator',
         commitSha: '9e41b2c',
-        confidence: 96
+        confidence: 96,
+        relevantCommits: [],
+        relevantFiles: [],
+        scoreBreakdown: {
+          score: 0,
+          rank: 6,
+          ruleVersion: SCORING_RULE_VERSION,
+          basePoints: 0,
+          testBonus: 0,
+          continuityBonus: 0,
+          factors: ['No verifiable implementation discovered (0 pts)']
+        }
       },
       {
         requirementId: 'req-devops',
         requirementTitle: 'Docker & Containerization',
         status: 'not_demonstrated',
+        evidenceType: 'none',
+        evidenceStrength: 'none',
         explanation: 'Not demonstrated in the analyzed repositories. No Dockerfile, docker-compose configuration, or container build specs were discovered.',
+        humanReadableExplanation: 'No Dockerfile or container configuration discovered.',
         repoFullName: 'alexchen/payment-orchestrator',
         commitSha: '9e41b2c',
-        confidence: 95
+        confidence: 95,
+        relevantCommits: [],
+        relevantFiles: [],
+        scoreBreakdown: {
+          score: 0,
+          rank: 7,
+          ruleVersion: SCORING_RULE_VERSION,
+          basePoints: 0,
+          testBonus: 0,
+          continuityBonus: 0,
+          factors: ['No verifiable implementation discovered (0 pts)']
+        }
       }
     ]
   },
@@ -317,6 +447,8 @@ WIP.`,
       timestamp: '2026-10-14T10:15:00.000Z'
     }
   ],
+  analysisScope: sampleScope,
+  aiSignals: sampleAiSignals,
   createdAt: '2026-10-14T10:15:00.000Z',
   updatedAt: '2026-10-14T10:15:00.000Z'
 };

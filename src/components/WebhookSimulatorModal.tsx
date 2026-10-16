@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { X, Sparkles, Send, ShieldAlert, CheckCircle2, GitCommit, FileCode, Radio } from 'lucide-react';
+import { X, Send, ShieldAlert, CheckCircle2, Radio } from 'lucide-react';
 import { Assessment, GapTask } from '@/lib/types';
 
 interface WebhookSimulatorModalProps {
@@ -25,10 +25,19 @@ export function WebhookSimulatorModal({
       ? `feat: ${preselectedTask.title.toLowerCase()}`
       : 'test: add automated integration test suite for payment endpoints'
   );
-  const [author, setAuthor] = useState('Student Developer');
+interface WebhookSimResult {
+  success?: boolean;
+  deliveryId?: string;
+  commitSha?: string;
+  newRevisionNumber?: number;
+  promotedSkills?: string[];
+  [key: string]: unknown;
+}
+
+  const [author] = useState('Student Developer');
   const [tamperSignature, setTamperSignature] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [resultLog, setResultLog] = useState<any | null>(null);
+  const [resultLog, setResultLog] = useState<WebhookSimResult | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   const presets: Record<string, { label: string; commit: string; file: string; code: string }> = {
@@ -134,8 +143,9 @@ CREATE INDEX idx_idempotency_created ON idempotency_keys (created_at);`
           onSuccess(data.assessment, data.promotedSkills || []);
         }
       }
-    } catch (err: any) {
-      setErrorMsg(err.message || 'Network error simulating webhook.');
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Network error simulating webhook.';
+      setErrorMsg(message);
     } finally {
       setIsSubmitting(false);
     }
@@ -248,7 +258,7 @@ CREATE INDEX idx_idempotency_created ON idempotency_keys (created_at);`
               </div>
             )}
 
-            {resultLog && resultLog.success && (
+            {resultLog?.success ? (
               <div className="p-3 bg-zinc-100 dark:bg-zinc-900 border border-zinc-400 dark:border-zinc-600 rounded space-y-1">
                 <div className="flex items-center space-x-1.5 text-zinc-900 dark:text-zinc-100 font-bold">
                   <CheckCircle2 className="w-4 h-4 text-emerald-500" />
@@ -258,14 +268,14 @@ CREATE INDEX idx_idempotency_created ON idempotency_keys (created_at);`
                   <div>Delivery ID: {resultLog.deliveryId}</div>
                   <div>Commit SHA: {resultLog.commitSha}</div>
                   <div>Created Revision: #{resultLog.newRevisionNumber}</div>
-                  {resultLog.promotedSkills && resultLog.promotedSkills.length > 0 && (
+                  {resultLog.promotedSkills && resultLog.promotedSkills.length > 0 ? (
                     <div className="font-bold text-zinc-950 dark:text-zinc-100 mt-1">
                       Promoted Skills: {resultLog.promotedSkills.join(', ')}
                     </div>
-                  )}
+                  ) : null}
                 </div>
               </div>
-            )}
+            ) : null}
 
             {/* Actions */}
             <div className="pt-2 flex items-center justify-end space-x-3">

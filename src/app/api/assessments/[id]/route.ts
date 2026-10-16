@@ -16,7 +16,8 @@ export async function GET(
     }
 
     return NextResponse.json({ success: true, assessment });
-  } catch (error: any) {
-    return NextResponse.json({ error: error.message || 'Failed to fetch assessment' }, { status: 500 });
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : 'Failed to fetch assessment';
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }

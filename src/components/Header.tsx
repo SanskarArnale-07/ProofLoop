@@ -29,8 +29,9 @@ export function Header({ assessment, onReassessed }: HeaderProps) {
       } else {
         alert(data.error || 'Failed to trigger reassessment');
       }
-    } catch (err: any) {
-      alert(err.message || 'Error triggering reassessment');
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Error triggering reassessment';
+      alert(message);
     } finally {
       setIsReassessing(false);
     }
@@ -47,7 +48,7 @@ export function Header({ assessment, onReassessed }: HeaderProps) {
               Sample Exploration Mode
             </span>
             <span>
-              This is realistic illustrative data from Stripe Backend Engineering. To run your live data, click "New Assessment".
+              This is realistic illustrative data from Stripe Backend Engineering. To run your live data, click &quot;New Assessment&quot;.
             </span>
           </div>
           <Link href="/onboard" className="underline font-semibold hover:text-[#DD5946]">

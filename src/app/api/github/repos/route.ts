@@ -24,10 +24,11 @@ export async function POST(req: NextRequest) {
       success: true,
       repo: repoInfo
     });
-  } catch (error: any) {
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : 'Failed to inspect GitHub repository.';
     console.error('GitHub repo validation error:', error);
     return NextResponse.json(
-      { error: error.message || 'Failed to inspect GitHub repository.' },
+      { error: message },
       { status: 400 }
     );
   }
@@ -45,7 +46,8 @@ export async function GET(req: NextRequest) {
 
     const repos = await fetchUserRepos(username, token);
     return NextResponse.json({ success: true, repos });
-  } catch (error: any) {
-    return NextResponse.json({ error: error.message || 'Failed to fetch repositories' }, { status: 500 });
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : 'Failed to fetch repositories';
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }

@@ -31,14 +31,15 @@ export async function POST(req: NextRequest) {
         if (!company) company = fetched.company;
         if (!rawText) rawText = fetched.rawText;
         sourceUrl = url;
-      } catch (err: any) {
+      } catch (err: unknown) {
         // If scraping failed but manualText was provided, fall back gracefully
         if (manualText) {
           rawText = manualText;
         } else {
+          const message = err instanceof Error ? err.message : 'Could not retrieve job posting content.';
           return NextResponse.json(
             {
-              error: err.message || 'Could not retrieve job posting content.',
+              error: message,
               suggestManualFallback: true
             },
             { status: 422 }
@@ -66,10 +67,11 @@ export async function POST(req: NextRequest) {
       success: true,
       posting
     });
-  } catch (error: any) {
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : 'Internal server error while extracting requirements.';
     console.error('Job extract API error:', error);
     return NextResponse.json(
-      { error: error.message || 'Internal server error while extracting requirements.' },
+      { error: message },
       { status: 500 }
     );
   }

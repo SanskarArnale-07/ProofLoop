@@ -1,5 +1,5 @@
 import * as cheerio from 'cheerio';
-import { InternshipPosting, InternshipRequirement } from './types';
+import { InternshipRequirement } from './types';
 
 // Validate URL for SSRF protection
 export function validateUrlSafety(inputUrl: string): { safe: boolean; error?: string; parsedUrl?: URL } {

@@ -48,15 +48,40 @@ function DashboardContent() {
       } else {
         setAssessment(data.assessment);
       }
-    } catch (err: any) {
-      setError(err.message || 'Error fetching assessment.');
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Error fetching assessment.');
     } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => {
-    fetchAssessment();
+    let isMounted = true;
+    async function load() {
+      try {
+        const res = await fetch(`/api/assessments/${assessmentId}`);
+        const data = await res.json();
+        if (isMounted) {
+          if (!res.ok || !data.success) {
+            setError(data.error || 'Failed to load assessment data.');
+          } else {
+            setAssessment(data.assessment);
+          }
+        }
+      } catch (err: unknown) {
+        if (isMounted) {
+          setError(err instanceof Error ? err.message : 'Error fetching assessment.');
+        }
+      } finally {
+        if (isMounted) {
+          setLoading(false);
+        }
+      }
+    }
+    load();
+    return () => {
+      isMounted = false;
+    };
   }, [assessmentId]);
 
   if (loading) {

@@ -8,8 +8,12 @@ import {
   GapTask,
   InternshipPosting,
   WebhookDeliveryLog,
-  RepositoryEvidence
+  RepositoryEvidence,
+  RevisionComparison,
+  AnalysisScope,
+  AISignalAnalysisResult
 } from './types';
+import { SCORING_RULE_VERSION } from './scoring';
 
 let dbInstance: DatabaseSync | null = null;
 
@@ -18,7 +22,6 @@ export function getDatabase(): DatabaseSync {
     return dbInstance;
   }
 
-  // Ensure data directory exists
   const dataDir = path.join(process.cwd(), 'data');
   if (!fs.existsSync(dataDir)) {
     fs.mkdirSync(dataDir, { recursive: true });
@@ -52,6 +55,8 @@ export function getDatabase(): DatabaseSync {
       latest_commit_sha TEXT NOT NULL,
       current_revision_number INTEGER NOT NULL DEFAULT 1,
       status TEXT NOT NULL,
+      analysis_scope_json TEXT,
+      ai_signals_json TEXT,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL,
       FOREIGN KEY (internship_id) REFERENCES internships(id) ON DELETE CASCADE
@@ -68,6 +73,10 @@ export function getDatabase(): DatabaseSync {
       demonstrated_count INTEGER NOT NULL,
       partial_count INTEGER NOT NULL,
       not_demonstrated_count INTEGER NOT NULL,
+      scoring_rule_version TEXT,
+      analysis_scope_json TEXT,
+      ai_signals_json TEXT,
+      score_breakdown_summary_json TEXT,
       created_at TEXT NOT NULL,
       FOREIGN KEY (assessment_id) REFERENCES assessments(id) ON DELETE CASCADE
     );
@@ -109,6 +118,22 @@ export function getDatabase(): DatabaseSync {
       created_at TEXT NOT NULL
     );
   `);
+
+  // Safe idempotent column additions for existing SQLite databases
+  const safeAlterColumn = (table: string, columnDef: string) => {
+    try {
+      db.exec(`ALTER TABLE ${table} ADD COLUMN ${columnDef}`);
+    } catch {
+      // Column already exists or table structure matches
+    }
+  };
+
+  safeAlterColumn('assessments', 'analysis_scope_json TEXT');
+  safeAlterColumn('assessments', 'ai_signals_json TEXT');
+  safeAlterColumn('revisions', 'scoring_rule_version TEXT');
+  safeAlterColumn('revisions', 'analysis_scope_json TEXT');
+  safeAlterColumn('revisions', 'ai_signals_json TEXT');
+  safeAlterColumn('revisions', 'score_breakdown_summary_json TEXT');
 
   dbInstance = db;
   return db;
@@ -155,52 +180,66 @@ export function getInternship(id: string): InternshipPosting | null {
 export function saveAssessment(assessment: Assessment): void {
   const db = getDatabase();
 
-  // Save internship first
-  saveInternship(assessment.internship);
+  db.exec('BEGIN IMMEDIATE');
+  try {
+    saveInternship(assessment.internship);
 
-  const stmt = db.prepare(`
-    INSERT OR REPLACE INTO assessments (id, internship_id, repo_full_name, repo_url, default_branch, latest_commit_sha, current_revision_number, status, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `);
+    const stmt = db.prepare(`
+      INSERT OR REPLACE INTO assessments (
+        id, internship_id, repo_full_name, repo_url, default_branch,
+        latest_commit_sha, current_revision_number, status,
+        analysis_scope_json, ai_signals_json, created_at, updated_at
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
 
-  stmt.run(
-    assessment.id,
-    assessment.internship.id,
-    assessment.repository.fullName,
-    assessment.repository.url,
-    assessment.repository.defaultBranch,
-    assessment.repository.latestCommitSha,
-    assessment.currentRevisionNumber,
-    assessment.status,
-    assessment.createdAt,
-    assessment.updatedAt
-  );
+    stmt.run(
+      assessment.id,
+      assessment.internship.id,
+      assessment.repository.fullName,
+      assessment.repository.url,
+      assessment.repository.defaultBranch,
+      assessment.repository.latestCommitSha,
+      assessment.currentRevisionNumber,
+      assessment.status,
+      assessment.analysisScope ? JSON.stringify(assessment.analysisScope) : null,
+      assessment.aiSignals ? JSON.stringify(assessment.aiSignals) : null,
+      assessment.createdAt,
+      assessment.updatedAt
+    );
 
-  // Save latest revision
-  if (assessment.latestRevision) {
-    saveRevision(assessment.latestRevision);
-  }
-
-  // Save tasks
-  if (assessment.tasks && assessment.tasks.length > 0) {
-    for (const task of assessment.tasks) {
-      saveRoadmapTask(assessment.id, task);
+    if (assessment.latestRevision) {
+      saveRevisionInternal(db, assessment.latestRevision);
     }
-  }
 
-  // Save initial activities if any
-  if (assessment.recentActivity && assessment.recentActivity.length > 0) {
-    for (const act of assessment.recentActivity) {
-      addActivityEvent(act);
+    if (assessment.tasks && assessment.tasks.length > 0) {
+      for (const task of assessment.tasks) {
+        saveRoadmapTaskInternal(db, assessment.id, task);
+      }
     }
+
+    if (assessment.recentActivity && assessment.recentActivity.length > 0) {
+      for (const act of assessment.recentActivity) {
+        addActivityEventInternal(db, act);
+      }
+    }
+
+    db.exec('COMMIT');
+  } catch (err) {
+    db.exec('ROLLBACK');
+    throw err;
   }
 }
 
-export function saveRevision(rev: AssessmentRevision): void {
-  const db = getDatabase();
+function saveRevisionInternal(db: DatabaseSync, rev: AssessmentRevision): void {
   const stmt = db.prepare(`
-    INSERT OR REPLACE INTO revisions (id, assessment_id, revision_number, commit_sha, commit_message, trigger_type, evidence_json, demonstrated_count, partial_count, not_demonstrated_count, created_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT OR REPLACE INTO revisions (
+      id, assessment_id, revision_number, commit_sha, commit_message,
+      trigger_type, evidence_json, demonstrated_count, partial_count,
+      not_demonstrated_count, scoring_rule_version, analysis_scope_json,
+      ai_signals_json, score_breakdown_summary_json, created_at
+    )
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
   stmt.run(
@@ -214,10 +253,13 @@ export function saveRevision(rev: AssessmentRevision): void {
     rev.demonstratedCount,
     rev.partialCount,
     rev.notDemonstratedCount,
+    rev.scoringRuleVersion || SCORING_RULE_VERSION,
+    rev.analysisScope ? JSON.stringify(rev.analysisScope) : null,
+    rev.aiSignals ? JSON.stringify(rev.aiSignals) : null,
+    rev.scoreBreakdownSummary ? JSON.stringify(rev.scoreBreakdownSummary) : null,
     rev.createdAt
   );
 
-  // Update latest commit on assessment
   const updateStmt = db.prepare(`
     UPDATE assessments
     SET latest_commit_sha = ?, current_revision_number = ?, updated_at = ?
@@ -226,8 +268,19 @@ export function saveRevision(rev: AssessmentRevision): void {
   updateStmt.run(rev.commitSha, rev.revisionNumber, rev.createdAt, rev.assessmentId);
 }
 
-export function saveRoadmapTask(assessmentId: string, task: GapTask): void {
+export function saveRevision(rev: AssessmentRevision): void {
   const db = getDatabase();
+  db.exec('BEGIN IMMEDIATE');
+  try {
+    saveRevisionInternal(db, rev);
+    db.exec('COMMIT');
+  } catch (err) {
+    db.exec('ROLLBACK');
+    throw err;
+  }
+}
+
+function saveRoadmapTaskInternal(db: DatabaseSync, assessmentId: string, task: GapTask): void {
   const stmt = db.prepare(`
     INSERT OR REPLACE INTO roadmap_tasks (id, assessment_id, requirement_id, task_data_json, status, created_at)
     VALUES (?, ?, ?, ?, ?, ?)
@@ -242,14 +295,18 @@ export function saveRoadmapTask(assessmentId: string, task: GapTask): void {
   );
 }
 
+export function saveRoadmapTask(assessmentId: string, task: GapTask): void {
+  const db = getDatabase();
+  saveRoadmapTaskInternal(db, assessmentId, task);
+}
+
 export function updateRoadmapTaskStatus(taskId: string, status: 'pending' | 'in_progress' | 'verified'): void {
   const db = getDatabase();
   const stmt = db.prepare(`UPDATE roadmap_tasks SET status = ? WHERE id = ?`);
   stmt.run(status, taskId);
 }
 
-export function addActivityEvent(event: ActivityEvent): void {
-  const db = getDatabase();
+function addActivityEventInternal(db: DatabaseSync, event: ActivityEvent): void {
   const stmt = db.prepare(`
     INSERT OR REPLACE INTO activity_events (id, assessment_id, event_type, title, description, commit_sha, commit_message, affected_skills_json, timestamp)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -265,6 +322,51 @@ export function addActivityEvent(event: ActivityEvent): void {
     event.affectedSkills ? JSON.stringify(event.affectedSkills) : null,
     event.timestamp
   );
+}
+
+export function addActivityEvent(event: ActivityEvent): void {
+  const db = getDatabase();
+  addActivityEventInternal(db, event);
+}
+
+/**
+ * Safely preserves the previous assessment revision if an assessment or reassessment fails.
+ */
+export function recordAssessmentFailure(assessmentId: string, errorMessage: string): void {
+  const db = getDatabase();
+  db.exec('BEGIN IMMEDIATE');
+  try {
+    const actStmt = db.prepare(`
+      INSERT OR REPLACE INTO activity_events (id, assessment_id, event_type, title, description, timestamp)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `);
+    actStmt.run(
+      `act-err-${Date.now()}`,
+      assessmentId,
+      'reassessment_failed',
+      'Reassessment Attempt Failed',
+      `Analysis could not be completed: ${errorMessage}. Previous assessment revision preserved without modification.`,
+      new Date().toISOString()
+    );
+
+    // Keep the assessment in 'completed' state if it already has valid revisions,
+    // only update timestamp. If no revisions exist, set to 'failed'.
+    const countStmt = db.prepare(`SELECT COUNT(*) as count FROM revisions WHERE assessment_id = ?`);
+    const countRow = countStmt.get(assessmentId) as { count: number } | undefined;
+    const hasRevisions = (countRow?.count || 0) > 0;
+
+    const updateStmt = db.prepare(`
+      UPDATE assessments
+      SET status = ?, updated_at = ?
+      WHERE id = ?
+    `);
+    updateStmt.run(hasRevisions ? 'completed' : 'failed', new Date().toISOString(), assessmentId);
+
+    db.exec('COMMIT');
+  } catch (err) {
+    db.exec('ROLLBACK');
+    console.error('Failed to record assessment failure:', err);
+  }
 }
 
 export function getAssessment(id: string): Assessment | null {
@@ -287,19 +389,7 @@ export function getAssessment(id: string): Assessment | null {
 
   let latestRevision: AssessmentRevision;
   if (revRow) {
-    latestRevision = {
-      id: revRow.id as string,
-      assessmentId: revRow.assessment_id as string,
-      revisionNumber: revRow.revision_number as number,
-      commitSha: revRow.commit_sha as string,
-      commitMessage: revRow.commit_message as string,
-      triggerType: revRow.trigger_type as 'initial' | 'webhook' | 'manual',
-      evidence: JSON.parse(revRow.evidence_json as string),
-      demonstratedCount: revRow.demonstrated_count as number,
-      partialCount: revRow.partial_count as number,
-      notDemonstratedCount: revRow.not_demonstrated_count as number,
-      createdAt: revRow.created_at as string
-    };
+    latestRevision = mapRevisionRow(revRow);
   } else {
     latestRevision = {
       id: 'rev-0',
@@ -312,6 +402,7 @@ export function getAssessment(id: string): Assessment | null {
       demonstratedCount: 0,
       partialCount: 0,
       notDemonstratedCount: 0,
+      scoringRuleVersion: SCORING_RULE_VERSION,
       createdAt: row.created_at as string
     };
   }
@@ -345,6 +436,24 @@ export function getAssessment(id: string): Assessment | null {
     timestamp: r.timestamp as string
   }));
 
+  let analysisScope: AnalysisScope | undefined;
+  if (row.analysis_scope_json) {
+    try {
+      analysisScope = JSON.parse(row.analysis_scope_json as string);
+    } catch {}
+  } else if (latestRevision.analysisScope) {
+    analysisScope = latestRevision.analysisScope;
+  }
+
+  let aiSignals: AISignalAnalysisResult | undefined;
+  if (row.ai_signals_json) {
+    try {
+      aiSignals = JSON.parse(row.ai_signals_json as string);
+    } catch {}
+  } else if (latestRevision.aiSignals) {
+    aiSignals = latestRevision.aiSignals;
+  }
+
   return {
     id: row.id as string,
     internship,
@@ -360,8 +469,51 @@ export function getAssessment(id: string): Assessment | null {
     latestRevision,
     tasks,
     recentActivity,
+    analysisScope,
+    aiSignals,
     createdAt: row.created_at as string,
     updatedAt: row.updated_at as string
+  };
+}
+
+function mapRevisionRow(row: Record<string, unknown>): AssessmentRevision {
+  let analysisScope: AnalysisScope | undefined;
+  if (row.analysis_scope_json) {
+    try {
+      analysisScope = JSON.parse(row.analysis_scope_json as string);
+    } catch {}
+  }
+
+  let aiSignals: AISignalAnalysisResult | undefined;
+  if (row.ai_signals_json) {
+    try {
+      aiSignals = JSON.parse(row.ai_signals_json as string);
+    } catch {}
+  }
+
+  let scoreBreakdownSummary;
+  if (row.score_breakdown_summary_json) {
+    try {
+      scoreBreakdownSummary = JSON.parse(row.score_breakdown_summary_json as string);
+    } catch {}
+  }
+
+  return {
+    id: row.id as string,
+    assessmentId: row.assessment_id as string,
+    revisionNumber: row.revision_number as number,
+    commitSha: row.commit_sha as string,
+    commitMessage: row.commit_message as string,
+    triggerType: row.trigger_type as 'initial' | 'webhook' | 'manual',
+    evidence: JSON.parse(row.evidence_json as string) as RepositoryEvidence[],
+    demonstratedCount: row.demonstrated_count as number,
+    partialCount: row.partial_count as number,
+    notDemonstratedCount: row.not_demonstrated_count as number,
+    scoringRuleVersion: (row.scoring_rule_version as string) || SCORING_RULE_VERSION,
+    analysisScope,
+    aiSignals,
+    scoreBreakdownSummary,
+    createdAt: row.created_at as string
   };
 }
 
@@ -400,20 +552,137 @@ export function getRevisionHistory(assessmentId: string): AssessmentRevision[] {
     ORDER BY revision_number DESC
   `);
   const rows = stmt.all(assessmentId) as Array<Record<string, unknown>>;
+  return rows.map(mapRevisionRow);
+}
 
-  return rows.map(row => ({
-    id: row.id as string,
-    assessmentId: row.assessment_id as string,
-    revisionNumber: row.revision_number as number,
-    commitSha: row.commit_sha as string,
-    commitMessage: row.commit_message as string,
-    triggerType: row.trigger_type as 'initial' | 'webhook' | 'manual',
-    evidence: JSON.parse(row.evidence_json as string) as RepositoryEvidence[],
-    demonstratedCount: row.demonstrated_count as number,
-    partialCount: row.partial_count as number,
-    notDemonstratedCount: row.not_demonstrated_count as number,
-    createdAt: row.created_at as string
-  }));
+export function getRevisionByNumber(assessmentId: string, revisionNumber: number): AssessmentRevision | null {
+  const db = getDatabase();
+  const stmt = db.prepare(`
+    SELECT * FROM revisions 
+    WHERE assessment_id = ? AND revision_number = ?
+    LIMIT 1
+  `);
+  const row = stmt.get(assessmentId, revisionNumber) as Record<string, unknown> | undefined;
+  if (!row) return null;
+  return mapRevisionRow(row);
+}
+
+/**
+ * Compares two assessment revisions and produces an audit trail of:
+ * - Evidence additions, removals, and changes
+ * - Score and status changes
+ * - Impact of scoring rule versions vs code changes
+ */
+export function compareRevisions(
+  assessmentId: string,
+  fromRevNumber: number,
+  toRevNumber: number
+): RevisionComparison | null {
+  const fromRev = getRevisionByNumber(assessmentId, fromRevNumber);
+  const toRev = getRevisionByNumber(assessmentId, toRevNumber);
+
+  if (!fromRev || !toRev) {
+    return null;
+  }
+
+  const fromMap = new Map(fromRev.evidence.map(e => [e.requirementId, e]));
+  const toMap = new Map(toRev.evidence.map(e => [e.requirementId, e]));
+
+  const addedEvidence: RevisionComparison['addedEvidence'] = [];
+  const removedEvidence: RevisionComparison['removedEvidence'] = [];
+  const modifiedEvidence: RevisionComparison['modifiedEvidence'] = [];
+  const scoreChanges: RevisionComparison['scoreChanges'] = [];
+
+  // Check additions & modifications
+  for (const [reqId, toEv] of toMap.entries()) {
+    const fromEv = fromMap.get(reqId);
+    if (!fromEv) {
+      addedEvidence.push({
+        requirementId: reqId,
+        requirementTitle: toEv.requirementTitle,
+        detail: `New requirement evaluated with status "${toEv.status}" in revision #${toRevNumber}.`
+      });
+    } else {
+      const fromScore = fromEv.scoreBreakdown?.score ?? (fromEv.status === 'demonstrated' ? 80 : fromEv.status === 'partial' ? 40 : 0);
+      const toScore = toEv.scoreBreakdown?.score ?? (toEv.status === 'demonstrated' ? 80 : toEv.status === 'partial' ? 40 : 0);
+
+      const statusChanged = fromEv.status !== toEv.status;
+      const scoreDiff = toScore - fromScore;
+
+      if (statusChanged || scoreDiff !== 0 || fromEv.codeExcerpt !== toEv.codeExcerpt) {
+        const changes: string[] = [];
+        if (statusChanged) {
+          changes.push(`Status changed from ${fromEv.status} to ${toEv.status}`);
+        }
+        if (scoreDiff !== 0) {
+          changes.push(`Score delta: ${scoreDiff > 0 ? '+' : ''}${scoreDiff} points`);
+        }
+        if (fromEv.filePath !== toEv.filePath && toEv.filePath) {
+          changes.push(`Evidence file updated to ${toEv.filePath}`);
+        }
+
+        modifiedEvidence.push({
+          requirementId: reqId,
+          requirementTitle: toEv.requirementTitle,
+          beforeStatus: fromEv.status,
+          afterStatus: toEv.status,
+          beforeScore: fromScore,
+          afterScore: toScore,
+          changes
+        });
+      }
+
+      if (scoreDiff !== 0) {
+        scoreChanges.push({
+          requirementId: reqId,
+          requirementTitle: toEv.requirementTitle,
+          beforeScore: fromScore,
+          afterScore: toScore,
+          delta: scoreDiff,
+          reason: statusChanged
+            ? `Demonstrated implementation changes in commit ${toRev.commitSha}`
+            : 'Evidence criteria refinement'
+        });
+      }
+    }
+  }
+
+  // Check removals
+  for (const [reqId, fromEv] of fromMap.entries()) {
+    if (!toMap.has(reqId)) {
+      removedEvidence.push({
+        requirementId: reqId,
+        requirementTitle: fromEv.requirementTitle,
+        detail: `Requirement was present in revision #${fromRevNumber} but not in revision #${toRevNumber}.`
+      });
+    }
+  }
+
+  const fromRule = fromRev.scoringRuleVersion || 'v2026.1';
+  const toRule = toRev.scoringRuleVersion || 'v2026.1';
+  const isIdenticalRules = fromRule === toRule;
+
+  const summary = `Comparison between Revision #${fromRevNumber} (${fromRev.commitSha.slice(0, 7)}) and #${toRevNumber} (${toRev.commitSha.slice(0, 7)}): ` +
+    `${scoreChanges.length} score change(s), ${addedEvidence.length} requirement addition(s), ${modifiedEvidence.length} modified evidence item(s).`;
+
+  return {
+    assessmentId,
+    fromRevisionNumber: fromRevNumber,
+    toRevisionNumber: toRevNumber,
+    fromCommitSha: fromRev.commitSha,
+    toCommitSha: toRev.commitSha,
+    addedEvidence,
+    removedEvidence,
+    modifiedEvidence,
+    scoreChanges,
+    scoringRuleChanges: {
+      fromRuleVersion: fromRule,
+      toRuleVersion: toRule,
+      isIdentical: isIdenticalRules,
+      differences: isIdenticalRules ? undefined : [`Scoring rule migrated from ${fromRule} to ${toRule}`]
+    },
+    summary
+  };
 }
 
 // Webhook log operations
@@ -422,13 +691,17 @@ export function isWebhookDeliveryDuplicate(deliveryId: string): boolean {
   const db = getDatabase();
   const stmt = db.prepare(`SELECT id FROM webhook_deliveries WHERE delivery_id = ?`);
   const row = stmt.get(deliveryId);
-  return !!row;
+  return Boolean(row);
 }
 
 export function recordWebhookDelivery(log: WebhookDeliveryLog): void {
   const db = getDatabase();
   const stmt = db.prepare(`
-    INSERT OR REPLACE INTO webhook_deliveries (id, delivery_id, repo_full_name, event_type, commit_sha, commit_message, author, files_changed_json, signature_valid, affected_requirements_json, created_at)
+    INSERT OR REPLACE INTO webhook_deliveries (
+      id, delivery_id, repo_full_name, event_type, commit_sha,
+      commit_message, author, files_changed_json, signature_valid,
+      affected_requirements_json, created_at
+    )
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
   stmt.run(

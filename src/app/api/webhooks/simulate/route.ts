@@ -150,8 +150,9 @@ CREATE INDEX idx_idempotency_created ON idempotency_keys (created_at);`;
       filesSimulated: Object.keys(mockFiles),
       assessment: updatedAssessment
     });
-  } catch (error: any) {
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : 'Simulation failed';
     console.error('Webhook simulation error:', error);
-    return NextResponse.json({ error: error.message || 'Simulation failed' }, { status: 500 });
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }

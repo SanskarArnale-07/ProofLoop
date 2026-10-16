@@ -1,15 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getAssessment, saveRevision, addActivityEvent } from '@/lib/db';
-import { fetchRepoTree } from '@/lib/github';
+import { getAssessment, saveRevision, addActivityEvent, recordAssessmentFailure } from '@/lib/db';
+import { fetchRepoTree, fetchRepoCommits } from '@/lib/github';
 import { analyzeRepositoryAgainstRequirements } from '@/lib/analyzer';
 import { AssessmentRevision, ActivityEvent } from '@/lib/types';
+import { SCORING_RULE_VERSION } from '@/lib/scoring';
 
 export async function POST(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  let assessmentId = '';
   try {
     const { id } = await params;
+    assessmentId = id;
     const assessment = getAssessment(id);
 
     if (!assessment) {
@@ -17,6 +20,8 @@ export async function POST(
     }
 
     const [owner, repo] = assessment.repository.fullName.split('/');
+
+    // 1. Fetch File Tree
     let fileTree = [];
     try {
       fileTree = await fetchRepoTree(owner, repo, assessment.repository.defaultBranch);
@@ -26,13 +31,31 @@ export async function POST(
         .map(e => ({ path: e.filePath!, mode: '100644', type: 'blob' as const, sha: 'curr' }));
     }
 
+    // 2. Fetch Commits
+    let commits = [];
+    try {
+      commits = await fetchRepoCommits(owner, repo, assessment.repository.defaultBranch, 20);
+    } catch {
+      commits = [
+        {
+          sha: assessment.repository.latestCommitSha,
+          message: assessment.latestRevision.commitMessage || 'Manual reassessment',
+          authorName: owner,
+          timestamp: new Date().toISOString(),
+          filesChanged: []
+        }
+      ];
+    }
+
+    // 3. Run Analysis
     const analysis = await analyzeRepositoryAgainstRequirements(
       {
         owner,
         repo,
         defaultBranch: assessment.repository.defaultBranch,
         commitSha: assessment.repository.latestCommitSha,
-        fileTree
+        fileTree,
+        commits
       },
       assessment.internship.requirements
     );
@@ -54,6 +77,9 @@ export async function POST(
       demonstratedCount,
       partialCount,
       notDemonstratedCount,
+      scoringRuleVersion: SCORING_RULE_VERSION,
+      analysisScope: analysis.analysisScope,
+      aiSignals: analysis.aiSignals,
       createdAt: now
     };
 
@@ -72,8 +98,21 @@ export async function POST(
 
     const updated = getAssessment(id);
     return NextResponse.json({ success: true, assessment: updated });
-  } catch (error: any) {
-    console.error('Manual reassessment error:', error);
-    return NextResponse.json({ error: error.message || 'Failed to trigger reassessment' }, { status: 500 });
+  } catch (error: unknown) {
+    const errMsg = error instanceof Error ? error.message : 'Failed to trigger reassessment';
+    console.error('Manual reassessment error:', errMsg);
+
+    // Preserve previous assessment upon reassessment failure
+    if (assessmentId) {
+      recordAssessmentFailure(assessmentId, errMsg);
+    }
+
+    return NextResponse.json(
+      {
+        error: errMsg,
+        message: 'Reassessment failed. Previous assessment history was preserved.'
+      },
+      { status: 500 }
+    );
   }
 }
