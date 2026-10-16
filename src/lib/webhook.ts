@@ -1,6 +1,8 @@
 import crypto from 'node:crypto';
 import {
   findAssessmentByRepo,
+  getAssessment,
+  hasRevisionForCommit,
   saveRevision,
   addActivityEvent,
   isWebhookDeliveryDuplicate,
@@ -8,7 +10,7 @@ import {
   recordAssessmentFailure
 } from './db';
 import { fetchRepoTree } from './github';
-import { analyzeRepositoryAgainstRequirements } from './analyzer';
+import { evaluateRepositoryCore } from './analyzer';
 import { AssessmentRevision, ActivityEvent, WebhookDeliveryLog, CommitInfo } from './types';
 import { SCORING_RULE_VERSION } from './scoring';
 
@@ -23,6 +25,10 @@ export type WebhookOutcome =
 // Deliveries currently being analyzed. Prevents two identical deliveries that
 // arrive at the same moment from both creating a revision.
 const inFlightDeliveries = new Set<string>();
+
+// Assessment queues to serialize evaluations per assessment so rapid successive pushes
+// cannot race, produce out-of-order revisions, or allow an older result to overwrite a newer result.
+const assessmentQueues = new Map<string, Promise<unknown>>();
 
 /**
  * Unsigned webhooks are only ever accepted for local development, and only when
@@ -267,15 +273,43 @@ export async function processPushWebhook(
     });
   }
 
-  // 6. Run Reassessment with failure safety
+  // 6. Run Reassessment with failure safety and assessment serialization
   const [owner, repoName] = repoFullName.split('/');
-  let fileTree;
   inFlightDeliveries.add(deliveryId);
+
+  // Queue execution for this assessment so rapid pushes run in deterministic sequence
+  const previousQueuedTask = assessmentQueues.get(assessment.id) || Promise.resolve();
+  let releaseQueue: () => void;
+  const currentQueueTask = new Promise<void>(resolve => { releaseQueue = resolve; });
+  assessmentQueues.set(assessment.id, previousQueuedTask.then(() => currentQueueTask).catch(() => {}));
+
+  await previousQueuedTask.catch(() => {});
+
   try {
+    // Re-fetch latest assessment state from DB in case a previous queued push completed
+    const currentAssessment = getAssessment(assessment.id) || assessment;
+
+    // Check if commit has already been evaluated for this assessment
+    if (
+      currentAssessment.latestRevision?.commitSha === commitSha ||
+      hasRevisionForCommit(currentAssessment.id, commitSha)
+    ) {
+      return {
+        success: true,
+        status: 'duplicate',
+        message: `Commit ${commitSha} is already evaluated for assessment "${currentAssessment.id}". Skipping duplicate.`,
+        deliveryId,
+        assessmentId: currentAssessment.id,
+        repoFullName,
+        commitSha
+      };
+    }
+
+    let fileTree;
     try {
-      fileTree = await fetchRepoTree(owner, repoName, assessment.repository.defaultBranch);
+      fileTree = await fetchRepoTree(owner, repoName, currentAssessment.repository.defaultBranch);
     } catch {
-      fileTree = assessment.latestRevision.evidence
+      fileTree = currentAssessment.latestRevision.evidence
         .filter(e => e.filePath)
         .map(e => ({ path: e.filePath!, mode: '100644', type: 'blob' as const, sha: 'curr' }));
 
@@ -294,24 +328,29 @@ export async function processPushWebhook(
       }
     }
 
-    const analysis = await analyzeRepositoryAgainstRequirements(
-      {
-        owner,
-        repo: repoName,
-        defaultBranch: assessment.repository.defaultBranch,
-        commitSha,
-        fileTree,
-        commits: commitInfos,
-        localFileCache: options?.mockFiles
-      },
-      assessment.internship.requirements
-    );
+    // Call the shared core evaluation engine (evaluateRepositoryCore)
+    const coreResult = await evaluateRepositoryCore({
+      assessmentId: currentAssessment.id,
+      repoFullName: currentAssessment.repository.fullName,
+      defaultBranch: currentAssessment.repository.defaultBranch,
+      targetCommitSha: commitSha,
+      requirements: currentAssessment.internship.requirements,
+      triggerType: 'webhook',
+      triggerMessage: commitMessage,
+      fileTree,
+      commits: commitInfos,
+      localFileCache: options?.mockFiles
+    });
+
+    if (!coreResult.success) {
+      throw new Error(coreResult.error || 'Repository core evaluation failed');
+    }
 
     // Compare with previous revision to detect skill promotions
-    const previousEvidenceMap = new Map(assessment.latestRevision.evidence.map(e => [e.requirementId, e.status]));
+    const previousEvidenceMap = new Map(currentAssessment.latestRevision.evidence.map(e => [e.requirementId, e.status]));
     const promotedSkills: string[] = [];
 
-    for (const newEv of analysis.evidenceList) {
+    for (const newEv of coreResult.evidenceList) {
       const prevStatus = previousEvidenceMap.get(newEv.requirementId);
       if (newEv.status === 'demonstrated' && prevStatus !== 'demonstrated') {
         promotedSkills.push(newEv.requirementTitle);
@@ -319,25 +358,25 @@ export async function processPushWebhook(
     }
 
     // Persist New Assessment Revision
-    const newRevisionNumber = assessment.currentRevisionNumber + 1;
-    const demonstratedCount = analysis.evidenceList.filter(e => e.status === 'demonstrated').length;
-    const partialCount = analysis.evidenceList.filter(e => e.status === 'partial').length;
-    const notDemonstratedCount = analysis.evidenceList.filter(e => e.status === 'not_demonstrated').length;
+    const newRevisionNumber = currentAssessment.currentRevisionNumber + 1;
+    const demonstratedCount = coreResult.evidenceList.filter(e => e.status === 'demonstrated').length;
+    const partialCount = coreResult.evidenceList.filter(e => e.status === 'partial').length;
+    const notDemonstratedCount = coreResult.evidenceList.filter(e => e.status === 'not_demonstrated').length;
 
     const newRevision: AssessmentRevision = {
-      id: `rev-${assessment.id}-${newRevisionNumber}`,
-      assessmentId: assessment.id,
+      id: `rev-${currentAssessment.id}-${newRevisionNumber}`,
+      assessmentId: currentAssessment.id,
       revisionNumber: newRevisionNumber,
       commitSha,
       commitMessage,
       triggerType: 'webhook',
-      evidence: analysis.evidenceList,
+      evidence: coreResult.evidenceList,
       demonstratedCount,
       partialCount,
       notDemonstratedCount,
       scoringRuleVersion: SCORING_RULE_VERSION,
-      analysisScope: analysis.analysisScope,
-      aiSignals: analysis.aiSignals,
+      analysisScope: coreResult.analysisScope,
+      aiSignals: coreResult.aiSignals,
       createdAt: new Date().toISOString()
     };
 
@@ -346,7 +385,7 @@ export async function processPushWebhook(
     // Record Activity Event
     const activityEvent: ActivityEvent = {
       id: `act-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-      assessmentId: assessment.id,
+      assessmentId: currentAssessment.id,
       eventType: promotedSkills.length > 0 ? 'skill_promoted' : 'reassessment_completed',
       title: promotedSkills.length > 0
         ? `Skill Verified: ${promotedSkills.join(', ')}`
@@ -382,7 +421,7 @@ export async function processPushWebhook(
       status: 'processed',
       message: `Reassessment completed successfully. Created revision #${newRevisionNumber}.`,
       deliveryId,
-      assessmentId: assessment.id,
+      assessmentId: currentAssessment.id,
       repoFullName,
       commitSha,
       affectedSkills: affectedReqs,
@@ -408,6 +447,7 @@ export async function processPushWebhook(
       commitSha
     };
   } finally {
+    releaseQueue!();
     inFlightDeliveries.delete(deliveryId);
   }
 }
