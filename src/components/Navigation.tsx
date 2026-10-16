@@ -5,10 +5,8 @@ import { usePathname } from 'next/navigation';
 import {
   LayoutDashboard,
   FileCheck2,
-  FileCode2,
   Compass,
   History,
-  Radio,
   PlusCircle,
 } from 'lucide-react';
 
@@ -33,12 +31,6 @@ export function Navigation({ currentAssessmentId }: NavigationProps) {
       active: pathname.startsWith('/dashboard/assessments')
     },
     {
-      name: 'Evidence Matrix',
-      href: currentAssessmentId ? `/dashboard/evidence?id=${currentAssessmentId}` : '/dashboard/evidence',
-      icon: FileCode2,
-      active: pathname.startsWith('/dashboard/evidence')
-    },
-    {
       name: 'Gap Roadmap',
       href: currentAssessmentId ? `/dashboard/roadmap?id=${currentAssessmentId}` : '/dashboard/roadmap',
       icon: Compass,
@@ -49,12 +41,6 @@ export function Navigation({ currentAssessmentId }: NavigationProps) {
       href: currentAssessmentId ? `/dashboard/history?id=${currentAssessmentId}` : '/dashboard/history',
       icon: History,
       active: pathname.startsWith('/dashboard/history')
-    },
-    {
-      name: 'Webhook Lab',
-      href: currentAssessmentId ? `/dashboard/webhook-lab?id=${currentAssessmentId}` : '/dashboard/webhook-lab',
-      icon: Radio,
-      active: pathname.startsWith('/dashboard/webhook-lab')
     }
   ];
 

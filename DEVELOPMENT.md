@@ -1,4 +1,4 @@
-﻿# ProofLoop — Development Reference
+# ProofLoop — Development Reference
 
 > **AI Career Coach · Problem W-PS-2 · Agentic AI Hackathon**
 > *Don't just claim it. Prove it.*
@@ -72,10 +72,8 @@ AI-Career-Coach/
 │   │   ├── dashboard/
 │   │   │   ├── page.tsx           # Dashboard home — assessment list + sample mode
 │   │   │   ├── assessments/       # Assessment detail: evidence table, skill cards
-│   │   │   ├── evidence/          # Raw evidence drill-down with code excerpts
-│   │   │   ├── history/           # Revision history timeline
-│   │   │   ├── roadmap/           # Gap-to-Proof roadmap task list
-│   │   │   └── webhook-lab/       # Interactive webhook test lab
+│   │   │   ├── history/           # Revision history timeline & audit trail
+│   │   │   └── roadmap/           # Gap-to-Proof roadmap task list
 │   │   └── api/
 │   │       ├── assessments/
 │   │       │   ├── route.ts       # GET (list), POST (create new assessment)

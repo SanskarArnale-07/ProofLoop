@@ -1056,10 +1056,10 @@ export default function ScrapbookLandingPage() {
                     )}
 
                     <Link
-                      href="/dashboard/webhook-lab"
+                      href="/dashboard/history?id=sample-assessment-stripe"
                       className="text-xs font-mono text-zinc-400 hover:text-zinc-200 underline decoration-zinc-600 ml-auto"
                     >
-                      Open Full Webhook Lab →
+                      View Revision Audit Trail →
                     </Link>
                   </div>
                 </div>
@@ -1159,10 +1159,10 @@ export default function ScrapbookLandingPage() {
               Sample Assessment
             </Link>
             <Link
-              href="/dashboard/webhook-lab"
+              href="/dashboard/history?id=sample-assessment-stripe"
               className="hover:text-white transition-colors"
             >
-              Webhook Lab
+              Audit History
             </Link>
             <Link
               href="/onboard"

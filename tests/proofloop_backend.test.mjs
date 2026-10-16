@@ -82,6 +82,7 @@ test('1. Multiple Commits and History Pagination - Evaluates multiple commits', 
 // ============================================================================
 // 2. Real Diff Extraction and Changed-File Analysis
 // ============================================================================
+
 test('2. Real Diff Extraction & Sensitive Redaction - Analyzes patches safely', () => {
   const fakeApiKey = 'TEST_API_KEY_FOR_REDACTION';
 
