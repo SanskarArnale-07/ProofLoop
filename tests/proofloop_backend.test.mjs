@@ -42,8 +42,11 @@ const {
 } = jiti('../src/lib/db.ts');
 
 const {
-  SAMPLE_ASSESSMENT
+  SAMPLE_ASSESSMENT,
+  ensureSampleDataSeeded
 } = jiti('../src/lib/sample-data.ts');
+
+ensureSampleDataSeeded();
 
 const {
   evaluateRepositoryCore,
