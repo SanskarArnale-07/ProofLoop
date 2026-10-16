@@ -130,7 +130,8 @@ CREATE INDEX idx_idempotency_created ON idempotency_keys (created_at);`;
     const previousRevision = assessment.latestRevision;
 
     const result = await processPushWebhook(rawPayload, headers, {
-      mockFiles
+      mockFiles,
+      secretOverride: secret
     });
 
     const updatedAssessment = getAssessment(assessmentId);

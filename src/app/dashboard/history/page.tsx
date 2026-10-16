@@ -5,7 +5,8 @@ import { useSearchParams } from 'next/navigation';
 import { Navigation } from '@/components/Navigation';
 import { Header } from '@/components/Header';
 import { Assessment, AssessmentRevision } from '@/lib/types';
-import { History, GitCommit, Calendar, Radio, CheckCircle2, ChevronRight } from 'lucide-react';
+import { History, GitCommit, Calendar, Radio, CheckCircle2, ChevronRight, BookOpen, Layers, Maximize2 } from 'lucide-react';
+import { WorkingVolumes } from '@/components/WorkingVolumes';
 
 function HistoryContent() {
   const searchParams = useSearchParams();
@@ -15,6 +16,8 @@ function HistoryContent() {
   const [revisions, setRevisions] = useState<AssessmentRevision[]>([]);
   const [selectedRevision, setSelectedRevision] = useState<AssessmentRevision | null>(null);
   const [loading, setLoading] = useState(true);
+  const [viewMode, setViewMode] = useState<'volumes' | 'list'>('volumes');
+  const [isFullScreen, setIsFullScreen] = useState(false);
 
   useEffect(() => {
     async function load() {
@@ -75,19 +78,94 @@ function HistoryContent() {
       <Header assessment={assessment} onReassessed={handleReassessed} showReassess={true} />
 
       <div className="p-8 max-w-7xl mx-auto w-full space-y-6">
-        <div>
-          <span className="text-xs font-mono uppercase tracking-widest text-zinc-500 block mb-1">
-            Immutable Audit Trail
-          </span>
-          <h2 className="font-editorial text-3xl font-bold tracking-tight text-zinc-900 dark:text-zinc-100">
-            Assessment Revisions & Evolution
-          </h2>
-          <p className="text-xs text-zinc-600 dark:text-zinc-400 font-sans mt-1">
-            ProofLoop never rewrites past assessments. Inspect how your code evidence evolved across commits and webhook events.
-          </p>
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b border-zinc-200 dark:border-zinc-800 pb-4">
+          <div>
+            <span className="text-xs font-mono uppercase tracking-widest text-zinc-500 block mb-1">
+              Immutable Audit Trail
+            </span>
+            <h2 className="font-editorial text-3xl font-bold tracking-tight text-zinc-900 dark:text-zinc-100">
+              Assessment Revisions & Evolution
+            </h2>
+            <p className="text-xs text-zinc-600 dark:text-zinc-400 font-sans mt-1">
+              ProofLoop retains up to 10 historical evaluations with complete code and test evidence.
+            </p>
+          </div>
+
+          <div className="flex items-center space-x-2">
+            <button
+              onClick={() => setViewMode('volumes')}
+              className={`flex items-center space-x-2 px-3 py-1.5 rounded text-xs font-mono transition-colors ${
+                viewMode === 'volumes'
+                  ? 'bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900 font-bold shadow-xs'
+                  : 'text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100 bg-zinc-100 dark:bg-zinc-900'
+              }`}
+            >
+              <BookOpen className="w-3.5 h-3.5" />
+              <span>3D Working Volumes</span>
+            </button>
+            <button
+              onClick={() => setViewMode('list')}
+              className={`flex items-center space-x-2 px-3 py-1.5 rounded text-xs font-mono transition-colors ${
+                viewMode === 'list'
+                  ? 'bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900 font-bold shadow-xs'
+                  : 'text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100 bg-zinc-100 dark:bg-zinc-900'
+              }`}
+            >
+              <Layers className="w-3.5 h-3.5" />
+              <span>Audit Timeline</span>
+            </button>
+            {viewMode === 'volumes' && (
+              <button
+                onClick={() => setIsFullScreen(!isFullScreen)}
+                title="Toggle Full Screen Shelf"
+                className="flex items-center space-x-1.5 px-2.5 py-1.5 rounded text-xs font-mono bg-zinc-100 dark:bg-zinc-900 text-zinc-600 dark:text-zinc-300 hover:text-zinc-900 dark:hover:text-zinc-100"
+              >
+                <Maximize2 className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+        {viewMode === 'volumes' ? (
+          <div className="space-y-6">
+            <div className="w-full rounded-lg border border-zinc-800 overflow-hidden bg-[#171a24] shadow-2xl relative" style={{ height: '740px' }}>
+              <WorkingVolumes
+                onSelectEvaluation={(idx) => {
+                  if (revisions && revisions[idx]) {
+                    setSelectedRevision(revisions[idx]);
+                  }
+                }}
+                isFullScreen={isFullScreen}
+                onClose={() => setIsFullScreen(false)}
+              />
+            </div>
+
+            {selectedRevision && (
+              <div className="p-5 bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded font-mono text-xs">
+                <div className="flex items-center justify-between pb-3 border-b border-zinc-200 dark:border-zinc-800">
+                  <div className="flex items-center space-x-3">
+                    <span className="font-bold text-sm text-zinc-900 dark:text-zinc-100">
+                      Revision #{selectedRevision.revisionNumber} Snapshot
+                    </span>
+                    <span className="px-2 py-0.5 rounded bg-zinc-100 dark:bg-zinc-800 text-[10px] uppercase font-bold text-zinc-600 dark:text-zinc-300">
+                      Trigger: {selectedRevision.triggerType}
+                    </span>
+                  </div>
+                  <div className="text-[11px] text-zinc-500 flex items-center space-x-2">
+                    <GitCommit className="w-3.5 h-3.5" />
+                    <span>{selectedRevision.commitSha}</span>
+                    <span>•</span>
+                    <span>{selectedRevision.demonstratedCount} Demonstrated</span>
+                  </div>
+                </div>
+                <p className="text-zinc-700 dark:text-zinc-300 font-sans text-xs mt-2 truncate">
+                  {selectedRevision.commitMessage}
+                </p>
+              </div>
+            )}
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
           {/* Left Column: Revision Timeline List */}
           <div className="lg:col-span-5 space-y-3 font-mono text-xs">
             {revisions.map((rev) => {
@@ -201,6 +279,7 @@ function HistoryContent() {
             )}
           </div>
         </div>
+      )}
       </div>
     </div>
   );

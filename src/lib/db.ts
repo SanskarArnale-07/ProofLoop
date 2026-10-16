@@ -30,9 +30,10 @@ export function getDatabase(): DatabaseSync {
   const dbPath = path.join(dataDir, 'proofloop.db');
   const db = new DatabaseSync(dbPath);
 
-  // Enable WAL mode and foreign keys for performance and data safety
+  // Enable WAL mode, busy timeout, and foreign keys for performance and data safety
   db.exec(`
     PRAGMA journal_mode = WAL;
+    PRAGMA busy_timeout = 5000;
     PRAGMA foreign_keys = ON;
 
     CREATE TABLE IF NOT EXISTS internships (

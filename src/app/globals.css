@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@import "./working-volumes.css";
 
 :root {
   --background: #30251F;

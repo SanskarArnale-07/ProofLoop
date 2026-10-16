@@ -12,8 +12,32 @@ import { analyzeRepositoryAgainstRequirements } from './analyzer';
 import { AssessmentRevision, ActivityEvent, WebhookDeliveryLog, CommitInfo } from './types';
 import { SCORING_RULE_VERSION } from './scoring';
 
+export type WebhookOutcome =
+  | 'processed'
+  | 'ignored'
+  | 'duplicate'
+  | 'invalid_signature'
+  | 'bad_payload'
+  | 'error';
+
+// Deliveries currently being analyzed. Prevents two identical deliveries that
+// arrive at the same moment from both creating a revision.
+const inFlightDeliveries = new Set<string>();
+
+/**
+ * Unsigned webhooks are only ever accepted for local development, and only when
+ * explicitly opted in. Production always requires GITHUB_WEBHOOK_SECRET.
+ */
+export function isUnsignedWebhookAllowed(): boolean {
+  return (
+    process.env.PROOFLOOP_ALLOW_UNSIGNED_WEBHOOKS === 'true' &&
+    process.env.NODE_ENV !== 'production'
+  );
+}
+
 export interface ProcessWebhookResult {
   success: boolean;
+  status: WebhookOutcome;
   message: string;
   deliveryId?: string;
   assessmentId?: string;
@@ -29,8 +53,9 @@ export function verifyWebhookSignature(
   signatureHeader: string | null,
   secret: string | undefined
 ): boolean {
+  // Fail closed: with no secret configured nothing can be verified, so reject.
   if (!secret) {
-    return true;
+    return false;
   }
 
   if (!signatureHeader) {
@@ -60,6 +85,8 @@ export async function processPushWebhook(
   headers: Headers | Record<string, string>,
   options?: {
     mockFiles?: Record<string, string>;
+    /** Used only by the in-app simulator, which signs its own payloads. */
+    secretOverride?: string;
   }
 ): Promise<ProcessWebhookResult> {
   const getHeader = (name: string): string | null => {
@@ -72,22 +99,38 @@ export async function processPushWebhook(
   const deliveryId = getHeader('X-GitHub-Delivery') || `delivery-${Date.now()}`;
   const eventType = getHeader('X-GitHub-Event') || 'push';
   const signature = getHeader('X-Hub-Signature-256');
-  const secret = process.env.GITHUB_WEBHOOK_SECRET;
+  const secret = options?.secretOverride ?? process.env.GITHUB_WEBHOOK_SECRET;
 
-  // 1. Signature Verification
-  const isSignatureValid = verifyWebhookSignature(rawBody, signature, secret);
+  // 1. Signature Verification (fails closed when no secret is configured)
+  const unsignedAllowed = !secret && isUnsignedWebhookAllowed();
+  const isSignatureValid = unsignedAllowed || verifyWebhookSignature(rawBody, signature, secret);
   if (!isSignatureValid) {
     return {
       success: false,
-      message: 'Invalid webhook signature: HMAC SHA-256 check failed.',
+      status: 'invalid_signature',
+      message: secret
+        ? 'Invalid webhook signature: HMAC SHA-256 check failed.'
+        : 'Webhook rejected: GITHUB_WEBHOOK_SECRET is not configured on the server.',
       deliveryId
     };
   }
 
-  // 2. Deduplication: safe handling of duplicate webhook deliveries
-  if (isWebhookDeliveryDuplicate(deliveryId)) {
+  // GitHub sends a "ping" when a webhook is first created.
+  if (eventType === 'ping') {
     return {
       success: true,
+      status: 'ignored',
+      message: 'Ping received. ProofLoop webhook is configured correctly.',
+      deliveryId
+    };
+  }
+
+  // 2. Deduplication: only deliveries that finished successfully are recorded,
+  // so GitHub's "Redeliver" still works after a failure.
+  if (isWebhookDeliveryDuplicate(deliveryId) || inFlightDeliveries.has(deliveryId)) {
+    return {
+      success: true,
+      status: 'duplicate',
       message: `Delivery ${deliveryId} has already been processed. Skipping duplicate.`,
       deliveryId
     };
@@ -97,6 +140,7 @@ export async function processPushWebhook(
   if (eventType !== 'push') {
     return {
       success: true,
+      status: 'ignored',
       message: `Event type "${eventType}" ignored. ProofLoop only monitors push events.`,
       deliveryId
     };
@@ -109,6 +153,7 @@ export async function processPushWebhook(
   } catch {
     return {
       success: false,
+      status: 'bad_payload',
       message: 'Malformed JSON payload in webhook delivery.',
       deliveryId
     };
@@ -119,6 +164,7 @@ export async function processPushWebhook(
   if (!repoFullName) {
     return {
       success: false,
+      status: 'bad_payload',
       message: 'Missing repository information in webhook payload.',
       deliveryId
     };
@@ -129,7 +175,39 @@ export async function processPushWebhook(
   if (!assessment) {
     return {
       success: true,
-      message: `No active ProofLoop assessment found for repository "${repoFullName}". Event logged.`,
+      status: 'ignored',
+      message: `No active ProofLoop assessment found for repository "${repoFullName}". Event ignored.`,
+      deliveryId,
+      repoFullName
+    };
+  }
+
+  // Only the default branch counts: ignore branch deletions, tags, other branches.
+  const pushedRef = typeof payload.ref === 'string' ? payload.ref : '';
+  const defaultRef = `refs/heads/${assessment.repository.defaultBranch}`;
+  if (payload.deleted === true) {
+    return {
+      success: true,
+      status: 'ignored',
+      message: `Branch deletion for "${pushedRef || 'unknown ref'}" ignored.`,
+      deliveryId,
+      repoFullName
+    };
+  }
+  if (pushedRef !== defaultRef) {
+    return {
+      success: true,
+      status: 'ignored',
+      message: `Push to "${pushedRef || 'unknown ref'}" ignored. ProofLoop only reassesses pushes to ${defaultRef}.`,
+      deliveryId,
+      repoFullName
+    };
+  }
+  if (!Array.isArray(payload.commits) || (payload.commits.length === 0 && !payload.head_commit)) {
+    return {
+      success: true,
+      status: 'ignored',
+      message: 'Push contained no commits. Nothing to reassess.',
       deliveryId,
       repoFullName
     };
@@ -192,6 +270,7 @@ export async function processPushWebhook(
   // 6. Run Reassessment with failure safety
   const [owner, repoName] = repoFullName.split('/');
   let fileTree;
+  inFlightDeliveries.add(deliveryId);
   try {
     try {
       fileTree = await fetchRepoTree(owner, repoName, assessment.repository.defaultBranch);
@@ -292,7 +371,7 @@ export async function processPushWebhook(
       commitMessage,
       author,
       filesChanged,
-      signatureValid: isSignatureValid,
+      signatureValid: isSignatureValid && !unsignedAllowed,
       affectedRequirements: affectedReqs,
       createdAt: new Date().toISOString()
     };
@@ -300,6 +379,7 @@ export async function processPushWebhook(
 
     return {
       success: true,
+      status: 'processed',
       message: `Reassessment completed successfully. Created revision #${newRevisionNumber}.`,
       deliveryId,
       assessmentId: assessment.id,
@@ -316,29 +396,19 @@ export async function processPushWebhook(
     // Crucial: preserve previous assessment when new analysis fails
     recordAssessmentFailure(assessment.id, errMsg);
 
-    const log: WebhookDeliveryLog = {
-      id: `del-log-${Date.now()}`,
-      deliveryId,
-      eventType,
-      repoFullName,
-      commitSha,
-      commitMessage,
-      author,
-      filesChanged,
-      signatureValid: isSignatureValid,
-      affectedRequirements: affectedReqs,
-      createdAt: new Date().toISOString()
-    };
-    recordWebhookDelivery(log);
-
+    // The delivery is deliberately NOT recorded as processed, so GitHub's
+    // "Redeliver" button can retry it.
     return {
       success: false,
+      status: 'error',
       message: `Reassessment failed: ${errMsg}. Previous successful revision was preserved.`,
       deliveryId,
       assessmentId: assessment.id,
       repoFullName,
       commitSha
     };
+  } finally {
+    inFlightDeliveries.delete(deliveryId);
   }
 }
 
