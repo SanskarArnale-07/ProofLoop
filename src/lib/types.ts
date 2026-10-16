@@ -233,12 +233,83 @@ export interface WebhookDeliveryLog {
   createdAt: string;
 }
 
+export interface EvaluationSummary {
+  id: string;
+  assessmentId: string;
+  evaluationNumber: number;
+  revisionNumber: number;
+  commitSha: string;
+  commitMessage: string;
+  triggerType: 'initial' | 'webhook' | 'manual';
+  timestamp: string;
+  createdAt: string;
+  overallScore: number;
+  totalPoints: number;
+  demonstratedCount: number;
+  partialCount: number;
+  notDemonstratedCount: number;
+  totalRequirements: number;
+  scoringRuleVersion: string;
+  isLatest: boolean;
+  evidence?: RepositoryEvidence[];
+}
+
 export interface RevisionComparison {
   assessmentId: string;
   fromRevisionNumber: number;
   toRevisionNumber: number;
   fromCommitSha: string;
   toCommitSha: string;
+  fromEvaluationId?: string;
+  toEvaluationId?: string;
+  overallScoreChange?: {
+    beforeScore: number;
+    afterScore: number;
+    delta: number;
+  };
+  newlyDemonstrated?: Array<{
+    requirementId: string;
+    requirementTitle: string;
+    score: number;
+  }>;
+  categorizedRequirements?: {
+    improved: Array<{
+      requirementId: string;
+      requirementTitle: string;
+      beforeStatus: EvidenceStatus;
+      afterStatus: EvidenceStatus;
+      beforeScore: number;
+      afterScore: number;
+      delta: number;
+    }>;
+    regressed: Array<{
+      requirementId: string;
+      requirementTitle: string;
+      beforeStatus: EvidenceStatus;
+      afterStatus: EvidenceStatus;
+      beforeScore: number;
+      afterScore: number;
+      delta: number;
+    }>;
+    unchanged: Array<{
+      requirementId: string;
+      requirementTitle: string;
+      status: EvidenceStatus;
+      score: number;
+    }>;
+  };
+  evidenceChanges?: Array<{
+    requirementId: string;
+    requirementTitle: string;
+    beforeFilePath?: string;
+    afterFilePath?: string;
+    beforeLines?: { start?: number; end?: number };
+    afterLines?: { start?: number; end?: number };
+    beforeAssertions?: number;
+    afterAssertions?: number;
+    description: string;
+  }>;
+  unavailableData?: string[];
   addedEvidence: Array<{
     requirementId: string;
     requirementTitle: string;
@@ -274,3 +345,4 @@ export interface RevisionComparison {
   };
   summary: string;
 }
+

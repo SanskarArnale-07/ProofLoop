@@ -25,31 +25,51 @@ export async function GET(
 
     if (!fromStr || !toStr) {
       return NextResponse.json(
-        { error: 'Query parameters "from" and "to" revision numbers are required (e.g. ?from=1&to=2).' },
+        { error: 'Query parameters "from" and "to" evaluation numbers or IDs are required (e.g. ?from=1&to=2).' },
         { status: 400 }
       );
     }
 
-    const fromVal = validatePositiveInteger(fromStr, '"from" revision number', 1, 100000);
-    if (!fromVal.valid || fromVal.value === undefined) {
-      return NextResponse.json({ error: fromVal.error || 'Invalid revision numbers provided.' }, { status: 400 });
+    let fromParam: number | string = fromStr;
+    if (/^\d+$/.test(fromStr.trim())) {
+      const fromVal = validatePositiveInteger(fromStr, '"from" evaluation number', 1, 100000);
+      if (!fromVal.valid || fromVal.value === undefined) {
+        return NextResponse.json({ error: fromVal.error || 'Invalid evaluation numbers provided.' }, { status: 400 });
+      }
+      fromParam = fromVal.value;
+    } else {
+      const idCheck = validateId(fromStr, '"from" evaluation ID');
+      if (!idCheck.valid) {
+        return NextResponse.json({ error: idCheck.error || 'Invalid evaluation ID format.' }, { status: 400 });
+      }
+      fromParam = idCheck.cleanId!;
     }
 
-    const toVal = validatePositiveInteger(toStr, '"to" revision number', 1, 100000);
-    if (!toVal.valid || toVal.value === undefined) {
-      return NextResponse.json({ error: toVal.error || 'Invalid revision numbers provided.' }, { status: 400 });
+    let toParam: number | string = toStr;
+    if (/^\d+$/.test(toStr.trim())) {
+      const toVal = validatePositiveInteger(toStr, '"to" evaluation number', 1, 100000);
+      if (!toVal.valid || toVal.value === undefined) {
+        return NextResponse.json({ error: toVal.error || 'Invalid evaluation numbers provided.' }, { status: 400 });
+      }
+      toParam = toVal.value;
+    } else {
+      const idCheck = validateId(toStr, '"to" evaluation ID');
+      if (!idCheck.valid) {
+        return NextResponse.json({ error: idCheck.error || 'Invalid evaluation ID format.' }, { status: 400 });
+      }
+      toParam = idCheck.cleanId!;
     }
 
-    const comparison = compareRevisions(idVal.cleanId, fromVal.value, toVal.value);
+    const comparison = compareRevisions(idVal.cleanId, fromParam, toParam);
     if (!comparison) {
       return NextResponse.json(
-        { error: `Could not compare revisions #${fromVal.value} and #${toVal.value}. Check that both revision numbers exist.` },
+        { error: `Could not compare evaluations "${fromParam}" and "${toParam}". Check that both evaluation records exist for this assessment.` },
         { status: 404 }
       );
     }
 
     return NextResponse.json({ success: true, comparison });
   } catch (error: unknown) {
-    return createErrorResponse(error, 'Failed to compare revisions');
+    return createErrorResponse(error, 'Failed to compare evaluations');
   }
 }

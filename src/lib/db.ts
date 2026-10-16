@@ -11,6 +11,7 @@ import {
   WebhookDeliveryLog,
   RepositoryEvidence,
   RevisionComparison,
+  EvaluationSummary,
   AnalysisScope,
   AISignalAnalysisResult
 } from './types';
@@ -35,6 +36,7 @@ export function getDatabase(): DatabaseSync {
   db.exec(`
     PRAGMA journal_mode = WAL;
     PRAGMA foreign_keys = ON;
+    PRAGMA busy_timeout = 5000;
 
     CREATE TABLE IF NOT EXISTS internships (
       id TEXT PRIMARY KEY,
@@ -153,8 +155,15 @@ export function safeJsonParse<T>(raw: unknown, fallback: T): T {
 export function saveInternship(internship: InternshipPosting): void {
   const db = getDatabase();
   const stmt = db.prepare(`
-    INSERT OR REPLACE INTO internships (id, title, company, location, source_url, raw_text, requirements_json, created_at)
+    INSERT INTO internships (id, title, company, location, source_url, raw_text, requirements_json, created_at)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(id) DO UPDATE SET
+      title = excluded.title,
+      company = excluded.company,
+      location = excluded.location,
+      source_url = excluded.source_url,
+      raw_text = excluded.raw_text,
+      requirements_json = excluded.requirements_json
   `);
   stmt.run(
     internship.id,
@@ -195,12 +204,23 @@ export function saveAssessment(assessment: Assessment): void {
     saveInternship(assessment.internship);
 
     const stmt = db.prepare(`
-      INSERT OR REPLACE INTO assessments (
+      INSERT INTO assessments (
         id, internship_id, repo_full_name, repo_url, default_branch,
         latest_commit_sha, current_revision_number, status,
         analysis_scope_json, ai_signals_json, created_at, updated_at
       )
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(id) DO UPDATE SET
+        internship_id = excluded.internship_id,
+        repo_full_name = excluded.repo_full_name,
+        repo_url = excluded.repo_url,
+        default_branch = excluded.default_branch,
+        latest_commit_sha = excluded.latest_commit_sha,
+        current_revision_number = excluded.current_revision_number,
+        status = excluded.status,
+        analysis_scope_json = excluded.analysis_scope_json,
+        ai_signals_json = excluded.ai_signals_json,
+        updated_at = excluded.updated_at
     `);
 
     stmt.run(
@@ -230,11 +250,65 @@ export function saveAssessment(assessment: Assessment): void {
 
     if (assessment.recentActivity && assessment.recentActivity.length > 0) {
       for (const act of assessment.recentActivity) {
-        addActivityEventInternal(db, act);
+        addActivityEventInternal(db, { ...act, assessmentId: assessment.id });
       }
     }
 
     db.exec('COMMIT');
+  } catch (err) {
+    db.exec('ROLLBACK');
+    throw err;
+  }
+}
+
+export const MAX_RETAINED_EVALUATIONS_PER_ASSESSMENT = 10;
+
+/**
+ * Enforces the evaluation history retention policy:
+ * Retains at most maxRetained (default: 10) completed evaluations per assessment history.
+ * Any older evaluations beyond the newest maxRetained are permanently deleted.
+ * Must be executed within the active database transaction for atomicity.
+ */
+export function enforceEvaluationRetentionInternal(
+  db: DatabaseSync,
+  assessmentId: string,
+  maxRetained: number = MAX_RETAINED_EVALUATIONS_PER_ASSESSMENT
+): number {
+  if (!assessmentId || maxRetained <= 0) return 0;
+
+  // Retrieve IDs of revisions exceeding the retention threshold for this specific assessment
+  const staleStmt = db.prepare(`
+    SELECT id FROM revisions
+    WHERE assessment_id = ?
+    ORDER BY revision_number DESC, created_at DESC
+    LIMIT -1 OFFSET ?
+  `);
+  const staleRows = staleStmt.all(assessmentId, maxRetained) as Array<{ id: string }>;
+
+  if (staleRows.length === 0) {
+    return 0;
+  }
+
+  const deleteStmt = db.prepare(`DELETE FROM revisions WHERE id = ? AND assessment_id = ?`);
+  let deletedCount = 0;
+  for (const row of staleRows) {
+    deleteStmt.run(row.id, assessmentId);
+    deletedCount++;
+  }
+
+  return deletedCount;
+}
+
+export function enforceEvaluationRetention(
+  assessmentId: string,
+  maxRetained: number = MAX_RETAINED_EVALUATIONS_PER_ASSESSMENT
+): number {
+  const db = getDatabase();
+  db.exec('BEGIN IMMEDIATE');
+  try {
+    const count = enforceEvaluationRetentionInternal(db, assessmentId, maxRetained);
+    db.exec('COMMIT');
+    return count;
   } catch (err) {
     db.exec('ROLLBACK');
     throw err;
@@ -276,6 +350,9 @@ function saveRevisionInternal(db: DatabaseSync, rev: AssessmentRevision): void {
     WHERE id = ?
   `);
   updateStmt.run(rev.commitSha, rev.revisionNumber, rev.createdAt, rev.assessmentId);
+
+  // Enforce evaluation history retention policy: retain only the 10 most recent evaluations atomically
+  enforceEvaluationRetentionInternal(db, rev.assessmentId, MAX_RETAINED_EVALUATIONS_PER_ASSESSMENT);
 }
 
 export function saveRevision(rev: AssessmentRevision): void {
@@ -574,6 +651,18 @@ export function findAssessmentByRepo(repoFullName: string): Assessment | null {
   return getAssessment(row.id);
 }
 
+export function calculateOverallEvaluationScore(evidence: RepositoryEvidence[]): { overallScore: number; totalPoints: number } {
+  if (!evidence || evidence.length === 0) {
+    return { overallScore: 0, totalPoints: 0 };
+  }
+  const totalPoints = evidence.reduce((sum, e) => {
+    const score = e.scoreBreakdown?.score ?? (e.status === 'demonstrated' ? 80 : e.status === 'partial' ? 40 : 0);
+    return sum + score;
+  }, 0);
+  const overallScore = Math.round(totalPoints / evidence.length);
+  return { overallScore, totalPoints };
+}
+
 export function getRevisionHistory(assessmentId: string): AssessmentRevision[] {
   const db = getDatabase();
   const stmt = db.prepare(`
@@ -597,23 +686,158 @@ export function getRevisionByNumber(assessmentId: string, revisionNumber: number
   return mapRevisionRow(row);
 }
 
+export function getRevisionByIdOrNumber(
+  assessmentId: string,
+  identifier: number | string
+): AssessmentRevision | null {
+  const db = getDatabase();
+  if (typeof identifier === 'number' || /^\d+$/.test(String(identifier).trim())) {
+    const num = typeof identifier === 'number' ? identifier : parseInt(String(identifier).trim(), 10);
+    return getRevisionByNumber(assessmentId, num);
+  }
+  const stmt = db.prepare(`
+    SELECT * FROM revisions 
+    WHERE assessment_id = ? AND id = ?
+    LIMIT 1
+  `);
+  const row = stmt.get(assessmentId, String(identifier).trim()) as Record<string, unknown> | undefined;
+  if (!row) return null;
+  return mapRevisionRow(row);
+}
+
+export interface EvaluationHistoryOptions {
+  order?: 'asc' | 'desc';
+  limit?: number;
+  offset?: number;
+  includeEvidence?: boolean;
+}
+
+export function getEvaluationHistory(
+  assessmentId: string,
+  options: EvaluationHistoryOptions = {}
+): {
+  evaluations: EvaluationSummary[];
+  latestEvaluation: EvaluationSummary | null;
+  total: number;
+  limit: number;
+  offset: number;
+  hasMore: boolean;
+} {
+  const db = getDatabase();
+  const order = options.order === 'desc' ? 'DESC' : 'ASC'; // Default: chronological (oldest to newest)
+  const limit = Math.max(1, Math.min(100, options.limit ?? 50));
+  const offset = Math.max(0, options.offset ?? 0);
+
+  // Total count of evaluations for this assessment
+  const countStmt = db.prepare(`SELECT COUNT(*) as count FROM revisions WHERE assessment_id = ?`);
+  const countRow = countStmt.get(assessmentId) as { count: number } | undefined;
+  const total = countRow?.count || 0;
+
+  // Identify latest revision by revision_number DESC
+  const latestStmt = db.prepare(`
+    SELECT * FROM revisions 
+    WHERE assessment_id = ? 
+    ORDER BY revision_number DESC 
+    LIMIT 1
+  `);
+  const latestRow = latestStmt.get(assessmentId) as Record<string, unknown> | undefined;
+  let latestEvaluation: EvaluationSummary | null = null;
+  if (latestRow) {
+    const rev = mapRevisionRow(latestRow);
+    const { overallScore, totalPoints } = calculateOverallEvaluationScore(rev.evidence);
+    latestEvaluation = {
+      id: rev.id,
+      assessmentId: rev.assessmentId,
+      evaluationNumber: rev.revisionNumber,
+      revisionNumber: rev.revisionNumber,
+      commitSha: rev.commitSha,
+      commitMessage: rev.commitMessage,
+      triggerType: rev.triggerType,
+      timestamp: rev.createdAt,
+      createdAt: rev.createdAt,
+      overallScore,
+      totalPoints,
+      demonstratedCount: rev.demonstratedCount,
+      partialCount: rev.partialCount,
+      notDemonstratedCount: rev.notDemonstratedCount,
+      totalRequirements: rev.evidence.length,
+      scoringRuleVersion: rev.scoringRuleVersion || SCORING_RULE_VERSION,
+      isLatest: true,
+      evidence: options.includeEvidence ? rev.evidence : undefined
+    };
+  }
+
+  // Fetch paginated evaluations ordered chronologically (or desc if requested)
+  const stmt = db.prepare(`
+    SELECT * FROM revisions 
+    WHERE assessment_id = ? 
+    ORDER BY revision_number ${order}
+    LIMIT ? OFFSET ?
+  `);
+  const rows = stmt.all(assessmentId, limit, offset) as Array<Record<string, unknown>>;
+  const evaluations: EvaluationSummary[] = rows.map(r => {
+    const rev = mapRevisionRow(r);
+    const { overallScore, totalPoints } = calculateOverallEvaluationScore(rev.evidence);
+    return {
+      id: rev.id,
+      assessmentId: rev.assessmentId,
+      evaluationNumber: rev.revisionNumber,
+      revisionNumber: rev.revisionNumber,
+      commitSha: rev.commitSha,
+      commitMessage: rev.commitMessage,
+      triggerType: rev.triggerType,
+      timestamp: rev.createdAt,
+      createdAt: rev.createdAt,
+      overallScore,
+      totalPoints,
+      demonstratedCount: rev.demonstratedCount,
+      partialCount: rev.partialCount,
+      notDemonstratedCount: rev.notDemonstratedCount,
+      totalRequirements: rev.evidence.length,
+      scoringRuleVersion: rev.scoringRuleVersion || SCORING_RULE_VERSION,
+      isLatest: latestEvaluation ? rev.id === latestEvaluation.id : false,
+      evidence: options.includeEvidence ? rev.evidence : undefined
+    };
+  });
+
+  return {
+    evaluations,
+    latestEvaluation,
+    total,
+    limit,
+    offset,
+    hasMore: offset + evaluations.length < total
+  };
+}
+
 /**
- * Compares two assessment revisions and produces an audit trail of:
- * - Evidence additions, removals, and changes
- * - Score and status changes
- * - Impact of scoring rule versions vs code changes
+ * Compares two assessment evaluations belonging to the same assessment.
+ * Accepts either evaluation revision numbers (1, 2) or stable evaluation IDs (rev-xxx-1).
  */
 export function compareRevisions(
   assessmentId: string,
-  fromRevNumber: number,
-  toRevNumber: number
+  fromRevOrId: number | string,
+  toRevOrId: number | string
 ): RevisionComparison | null {
-  const fromRev = getRevisionByNumber(assessmentId, fromRevNumber);
-  const toRev = getRevisionByNumber(assessmentId, toRevNumber);
+  const fromRev = getRevisionByIdOrNumber(assessmentId, fromRevOrId);
+  const toRev = getRevisionByIdOrNumber(assessmentId, toRevOrId);
 
   if (!fromRev || !toRev) {
     return null;
   }
+
+  // Ensure both evaluations belong to the same assessment
+  if (fromRev.assessmentId !== assessmentId || toRev.assessmentId !== assessmentId) {
+    return null;
+  }
+
+  const fromOverall = calculateOverallEvaluationScore(fromRev.evidence);
+  const toOverall = calculateOverallEvaluationScore(toRev.evidence);
+  const overallScoreChange = {
+    beforeScore: fromOverall.overallScore,
+    afterScore: toOverall.overallScore,
+    delta: toOverall.overallScore - fromOverall.overallScore
+  };
 
   const fromMap = new Map(fromRev.evidence.map(e => [e.requirementId, e]));
   const toMap = new Map(toRev.evidence.map(e => [e.requirementId, e]));
@@ -622,22 +846,137 @@ export function compareRevisions(
   const removedEvidence: RevisionComparison['removedEvidence'] = [];
   const modifiedEvidence: RevisionComparison['modifiedEvidence'] = [];
   const scoreChanges: RevisionComparison['scoreChanges'] = [];
+  const newlyDemonstrated: NonNullable<RevisionComparison['newlyDemonstrated']> = [];
+  const improved: NonNullable<NonNullable<RevisionComparison['categorizedRequirements']>['improved']> = [];
+  const regressed: NonNullable<NonNullable<RevisionComparison['categorizedRequirements']>['regressed']> = [];
+  const unchanged: NonNullable<NonNullable<RevisionComparison['categorizedRequirements']>['unchanged']> = [];
+  const evidenceChanges: NonNullable<RevisionComparison['evidenceChanges']> = [];
+  const unavailableData: string[] = [];
+
+  const statusRank = (s: string) => (s === 'demonstrated' ? 2 : s === 'partial' ? 1 : 0);
 
   // Check additions & modifications
   for (const [reqId, toEv] of toMap.entries()) {
     const fromEv = fromMap.get(reqId);
+    const toScore = toEv.scoreBreakdown?.score ?? (toEv.status === 'demonstrated' ? 80 : toEv.status === 'partial' ? 40 : 0);
+
     if (!fromEv) {
       addedEvidence.push({
         requirementId: reqId,
         requirementTitle: toEv.requirementTitle,
-        detail: `New requirement evaluated with status "${toEv.status}" in revision #${toRevNumber}.`
+        detail: `New requirement evaluated with status "${toEv.status}" in evaluation #${toRev.revisionNumber}.`
       });
+
+      unavailableData.push(
+        `Requirement "${toEv.requirementTitle}" (${reqId}) was evaluated in evaluation #${toRev.revisionNumber} (${toRev.commitSha.slice(0, 7)}) but was not tracked in earlier evaluation #${fromRev.revisionNumber} (${fromRev.commitSha.slice(0, 7)}).`
+      );
+
+      if (toEv.status === 'demonstrated') {
+        newlyDemonstrated.push({
+          requirementId: reqId,
+          requirementTitle: toEv.requirementTitle,
+          score: toScore
+        });
+      }
+
+      if (toScore > 0) {
+        improved.push({
+          requirementId: reqId,
+          requirementTitle: toEv.requirementTitle,
+          beforeStatus: 'not_demonstrated',
+          afterStatus: toEv.status,
+          beforeScore: 0,
+          afterScore: toScore,
+          delta: toScore
+        });
+      } else {
+        unchanged.push({
+          requirementId: reqId,
+          requirementTitle: toEv.requirementTitle,
+          status: toEv.status,
+          score: toScore
+        });
+      }
     } else {
       const fromScore = fromEv.scoreBreakdown?.score ?? (fromEv.status === 'demonstrated' ? 80 : fromEv.status === 'partial' ? 40 : 0);
-      const toScore = toEv.scoreBreakdown?.score ?? (toEv.status === 'demonstrated' ? 80 : toEv.status === 'partial' ? 40 : 0);
-
       const statusChanged = fromEv.status !== toEv.status;
       const scoreDiff = toScore - fromScore;
+      const fromR = statusRank(fromEv.status);
+      const toR = statusRank(toEv.status);
+
+      // Check newly demonstrated
+      if (fromEv.status !== 'demonstrated' && toEv.status === 'demonstrated') {
+        newlyDemonstrated.push({
+          requirementId: reqId,
+          requirementTitle: toEv.requirementTitle,
+          score: toScore
+        });
+      }
+
+      // Categorize into improved, regressed, or unchanged
+      if (toR > fromR || scoreDiff > 0) {
+        improved.push({
+          requirementId: reqId,
+          requirementTitle: toEv.requirementTitle,
+          beforeStatus: fromEv.status,
+          afterStatus: toEv.status,
+          beforeScore: fromScore,
+          afterScore: toScore,
+          delta: scoreDiff
+        });
+      } else if (toR < fromR || scoreDiff < 0) {
+        regressed.push({
+          requirementId: reqId,
+          requirementTitle: toEv.requirementTitle,
+          beforeStatus: fromEv.status,
+          afterStatus: toEv.status,
+          beforeScore: fromScore,
+          afterScore: toScore,
+          delta: scoreDiff
+        });
+      } else {
+        unchanged.push({
+          requirementId: reqId,
+          requirementTitle: toEv.requirementTitle,
+          status: toEv.status,
+          score: toScore
+        });
+      }
+
+      // Check evidence-level changes
+      const fileChanged = fromEv.filePath !== toEv.filePath;
+      const linesChanged = fromEv.lineStart !== toEv.lineStart || fromEv.lineEnd !== toEv.lineEnd;
+      const fromAsserts = fromEv.testResultsSummary?.assertionsFound;
+      const toAsserts = toEv.testResultsSummary?.assertionsFound;
+      const assertionsChanged = fromAsserts !== toAsserts;
+
+      if (fileChanged || linesChanged || assertionsChanged || fromEv.codeExcerpt !== toEv.codeExcerpt) {
+        const descParts: string[] = [];
+        if (fileChanged) descParts.push(`File changed from ${fromEv.filePath || 'none'} to ${toEv.filePath || 'none'}`);
+        if (linesChanged && toEv.lineStart && toEv.lineEnd) descParts.push(`Citations lines changed to L${toEv.lineStart}-L${toEv.lineEnd}`);
+        if (assertionsChanged) descParts.push(`Assertions changed from ${fromAsserts ?? 0} to ${toAsserts ?? 0}`);
+        if (fromEv.codeExcerpt !== toEv.codeExcerpt && toEv.codeExcerpt) descParts.push('Code excerpt updated');
+
+        evidenceChanges.push({
+          requirementId: reqId,
+          requirementTitle: toEv.requirementTitle,
+          beforeFilePath: fromEv.filePath,
+          afterFilePath: toEv.filePath,
+          beforeLines: { start: fromEv.lineStart, end: fromEv.lineEnd },
+          afterLines: { start: toEv.lineStart, end: toEv.lineEnd },
+          beforeAssertions: fromAsserts,
+          afterAssertions: toAsserts,
+          description: descParts.join('; ')
+        });
+      }
+
+      // Missing evidence checks in older evaluation
+      if (!fromEv.codeExcerpt && toEv.codeExcerpt) {
+        unavailableData.push(`Code citation excerpt for requirement "${toEv.requirementTitle}" was not captured in earlier evaluation #${fromRev.revisionNumber}.`);
+      }
+      if (!fromEv.filePath && toEv.filePath) {
+        unavailableData.push(`File location for requirement "${toEv.requirementTitle}" was not recorded in evaluation #${fromRev.revisionNumber}.`);
+      }
 
       if (statusChanged || scoreDiff !== 0 || fromEv.codeExcerpt !== toEv.codeExcerpt) {
         const changes: string[] = [];
@@ -683,8 +1022,11 @@ export function compareRevisions(
       removedEvidence.push({
         requirementId: reqId,
         requirementTitle: fromEv.requirementTitle,
-        detail: `Requirement was present in revision #${fromRevNumber} but not in revision #${toRevNumber}.`
+        detail: `Requirement was present in evaluation #${fromRev.revisionNumber} but not in evaluation #${toRev.revisionNumber}.`
       });
+      unavailableData.push(
+        `Requirement "${fromEv.requirementTitle}" (${reqId}) was tracked in evaluation #${fromRev.revisionNumber} but removed or omitted in evaluation #${toRev.revisionNumber}.`
+      );
     }
   }
 
@@ -692,15 +1034,28 @@ export function compareRevisions(
   const toRule = toRev.scoringRuleVersion || 'v2026.1';
   const isIdenticalRules = fromRule === toRule;
 
-  const summary = `Comparison between Revision #${fromRevNumber} (${fromRev.commitSha.slice(0, 7)}) and #${toRevNumber} (${toRev.commitSha.slice(0, 7)}): ` +
-    `${scoreChanges.length} score change(s), ${addedEvidence.length} requirement addition(s), ${modifiedEvidence.length} modified evidence item(s).`;
+  const summary = `Comparison between Evaluation #${fromRev.revisionNumber} (${fromRev.commitSha.slice(0, 7)}) and #${toRev.revisionNumber} (${toRev.commitSha.slice(0, 7)}): ` +
+    `Overall score change: ${overallScoreChange.delta >= 0 ? '+' : ''}${overallScoreChange.delta} pts (${overallScoreChange.beforeScore} -> ${overallScoreChange.afterScore}), ` +
+    `${newlyDemonstrated.length} newly demonstrated, ${improved.length} improved, ${regressed.length} regressed, ${unchanged.length} unchanged, ` +
+    `${evidenceChanges.length} evidence update(s).`;
 
   return {
     assessmentId,
-    fromRevisionNumber: fromRevNumber,
-    toRevisionNumber: toRevNumber,
+    fromRevisionNumber: fromRev.revisionNumber,
+    toRevisionNumber: toRev.revisionNumber,
     fromCommitSha: fromRev.commitSha,
     toCommitSha: toRev.commitSha,
+    fromEvaluationId: fromRev.id,
+    toEvaluationId: toRev.id,
+    overallScoreChange,
+    newlyDemonstrated,
+    categorizedRequirements: {
+      improved,
+      regressed,
+      unchanged
+    },
+    evidenceChanges,
+    unavailableData,
     addedEvidence,
     removedEvidence,
     modifiedEvidence,

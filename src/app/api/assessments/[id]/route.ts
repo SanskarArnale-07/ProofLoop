@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getAssessment } from '@/lib/db';
-import { AI_SIGNAL_DISCLAIMER } from '@/lib/ai-signals';
 import { validateId } from '@/lib/validation';
 import { createErrorResponse } from '@/lib/errors';
 
@@ -20,24 +19,11 @@ export async function GET(
       return NextResponse.json({ error: 'Assessment not found' }, { status: 404 });
     }
 
-    const aiSignals = assessment.aiSignals || assessment.latestRevision?.aiSignals || {
-      overallAssessment: 'insufficient_evidence',
-      findings: [],
-      summary: 'No meaningful AI-authorship signals detected across analyzed commits and comments.',
-      limitationNotice: AI_SIGNAL_DISCLAIMER,
-      analyzedArtifactsCount: {
-        commits: 1,
-        comments: 0,
-        docFiles: 0
-      }
-    };
-
     return NextResponse.json({
       success: true,
-      assessmentId: idVal.cleanId,
-      signals: aiSignals
+      assessment
     });
   } catch (error: unknown) {
-    return createErrorResponse(error, 'Failed to retrieve AI authorship signals');
+    return createErrorResponse(error, 'Failed to fetch assessment');
   }
 }

@@ -188,17 +188,95 @@ Triggers an immediate re-evaluation of the monitored repository code. If reasses
 
 ---
 
-### `GET /api/assessments/[id]/revisions`
-Retrieves revision history or revision comparisons.
+### `GET /api/assessments/[id]/revisions` (and `GET /api/assessments/[id]/history`)
+Retrieves the previous successful evaluations for a particular assessment in chronological order (oldest to newest by default), with pagination, overall score (0-100), requirement counts, and a separate pointer to the latest evaluation.
 
-**Optional Query Parameters:**
-- `from`: Start revision number (e.g., `?from=1&to=2`)
-- `to`: Target revision number
+Also acts as an evaluation comparison endpoint if `from` and `to` query parameters are supplied.
 
-**Response without query parameters (`200 OK`):**
+**Query Parameters:**
+- `order` (optional, string): Sort order by timestamp/number. Allowed values: `asc` (default, chronological oldest to newest for historical timeline display) or `desc` (newest first).
+- `limit` (optional, integer): Maximum number of evaluations to return (default: 50, min: 1, max: 100).
+- `offset` (optional, integer): Number of evaluations to skip for pagination (default: 0).
+- `page` (optional, integer): Page number (1-indexed; alternate to `offset`).
+- `includeEvidence` (optional, boolean): If `true`, includes full requirement-level evidence arrays for each evaluation (default: `false`).
+- `from` (optional, integer or string): When comparing, the source evaluation revision number or stable ID.
+- `to` (optional, integer or string): When comparing, the target evaluation revision number or stable ID.
+
+**Response (`200 OK`):**
 ```json
 {
   "success": true,
+  "assessmentId": "sample-assessment-stripe",
+  "total": 3,
+  "limit": 50,
+  "offset": 0,
+  "hasMore": false,
+  "latestEvaluation": {
+    "id": "rev-sample-3",
+    "evaluationNumber": 3,
+    "revisionNumber": 3,
+    "triggerType": "push",
+    "commitSha": "c3d4e5f",
+    "overallScore": 88,
+    "totalPoints": 265,
+    "scoringRuleVersion": "v2026.1",
+    "demonstratedCount": 5,
+    "partialCount": 1,
+    "notDemonstratedCount": 1,
+    "totalRequirements": 7,
+    "isLatest": true,
+    "createdAt": "2026-10-16T14:00:00.000Z"
+  },
+  "evaluations": [
+    {
+      "id": "rev-sample-1",
+      "evaluationNumber": 1,
+      "revisionNumber": 1,
+      "triggerType": "initial",
+      "commitSha": "9e41b2c",
+      "overallScore": 57,
+      "totalPoints": 170,
+      "scoringRuleVersion": "v2026.1",
+      "demonstratedCount": 4,
+      "partialCount": 1,
+      "notDemonstratedCount": 2,
+      "totalRequirements": 7,
+      "isLatest": false,
+      "createdAt": "2026-10-14T10:15:00.000Z"
+    },
+    {
+      "id": "rev-sample-2",
+      "evaluationNumber": 2,
+      "revisionNumber": 2,
+      "triggerType": "push",
+      "commitSha": "a2b3c4d",
+      "overallScore": 71,
+      "totalPoints": 215,
+      "scoringRuleVersion": "v2026.1",
+      "demonstratedCount": 5,
+      "partialCount": 0,
+      "notDemonstratedCount": 2,
+      "totalRequirements": 7,
+      "isLatest": false,
+      "createdAt": "2026-10-15T11:30:00.000Z"
+    },
+    {
+      "id": "rev-sample-3",
+      "evaluationNumber": 3,
+      "revisionNumber": 3,
+      "triggerType": "push",
+      "commitSha": "c3d4e5f",
+      "overallScore": 88,
+      "totalPoints": 265,
+      "scoringRuleVersion": "v2026.1",
+      "demonstratedCount": 5,
+      "partialCount": 1,
+      "notDemonstratedCount": 1,
+      "totalRequirements": 7,
+      "isLatest": true,
+      "createdAt": "2026-10-16T14:00:00.000Z"
+    }
+  ],
   "revisions": [
     {
       "id": "rev-sample-1",
@@ -213,16 +291,23 @@ Retrieves revision history or revision comparisons.
 }
 ```
 
+**Error Responses:**
+- `400 Bad Request`: Invalid assessment ID format or invalid pagination parameter.
+- `404 Not Found`: Assessment does not exist.
+
 ---
 
 ### `GET /api/assessments/[id]/compare`
-Compares two specific assessment revisions and generates an audit diff.
+Compares two evaluations belonging to the same assessment. Accepts either evaluation revision numbers (e.g., `?from=1&to=2`) or stable database IDs (e.g., `?from=rev-xxx-1&to=rev-xxx-2`).
+
+Outputs overall score deltas, requirement status and score changes, newly demonstrated skills, categorized requirements (`improved`, `regressed`, `unchanged`), concrete evidence modifications, and explicit notices for missing or unavailable comparison data.
 
 **Query Parameters:**
-- `from` (required, integer)
-- `to` (required, integer)
+- `from` (required, integer or string): Baseline evaluation revision number or stable ID.
+- `to` (required, integer or string): Target evaluation revision number or stable ID.
 
-**Example:** `GET /api/assessments/sample-assessment-stripe/compare?from=1&to=2`
+**Example Request:**
+`GET /api/assessments/sample-assessment-stripe/compare?from=1&to=2`
 
 **Response (`200 OK`):**
 ```json
@@ -232,11 +317,20 @@ Compares two specific assessment revisions and generates an audit diff.
     "assessmentId": "sample-assessment-stripe",
     "fromRevisionNumber": 1,
     "toRevisionNumber": 2,
+    "fromRevisionId": "rev-sample-1",
+    "toRevisionId": "rev-sample-2",
     "fromCommitSha": "9e41b2c",
     "toCommitSha": "a2b3c4d",
-    "addedEvidence": [],
-    "removedEvidence": [],
-    "modifiedEvidence": [
+    "fromOverallScore": 57,
+    "toOverallScore": 71,
+    "overallScoreChange": 14,
+    "newlyDemonstrated": ["req-testing"],
+    "categorizedRequirements": {
+      "improved": ["req-testing"],
+      "regressed": [],
+      "unchanged": ["req-api", "req-db", "req-auth"]
+    },
+    "statusChanges": [
       {
         "requirementId": "req-testing",
         "requirementTitle": "Automated Testing & Coverage",
@@ -261,15 +355,56 @@ Compares two specific assessment revisions and generates an audit diff.
         "reason": "Demonstrated implementation changes in commit a2b3c4d"
       }
     ],
+    "evidenceChanges": [
+      {
+        "requirementId": "req-testing",
+        "requirementTitle": "Automated Testing & Coverage",
+        "beforeStatus": "not_demonstrated",
+        "afterStatus": "demonstrated",
+        "beforeEvidence": null,
+        "afterEvidence": {
+          "filePath": "tests/charge.test.ts",
+          "lineStart": 10,
+          "lineEnd": 45,
+          "evidenceStrength": "strong",
+          "evidenceType": "test_suite"
+        },
+        "description": "Evidence established in tests/charge.test.ts:10-45"
+      }
+    ],
+    "unavailableData": [],
     "scoringRuleChanges": {
       "fromRuleVersion": "v2026.1",
       "toRuleVersion": "v2026.1",
       "isIdentical": true
     },
-    "summary": "Comparison between Revision #1 (9e41b2c) and #2 (a2b3c4d): 1 score change(s), 0 requirement addition(s), 1 modified evidence item(s)."
+    "summary": "Comparison between Revision #1 (9e41b2c) and #2 (a2b3c4d): overall score changed by +14 (57 -> 71). 1 improved, 0 regressed, 3 unchanged. 1 newly demonstrated requirement(s)."
   }
 }
 ```
+
+**Handling Missing Data or Older Incomplete Evaluations:**
+When comparing older evaluations where evidence or granular score breakdowns are unavailable, the API does **not** silently treat missing data as a regression. Instead, it maintains the requirement status and explicitly populates `unavailableData`:
+```json
+{
+  "unavailableData": [
+    {
+      "requirementId": "req-legacy",
+      "requirementTitle": "Legacy Skill",
+      "issue": "Score breakdown unavailable in revision #1"
+    }
+  ]
+}
+```
+
+**Error Responses:**
+- `400 Bad Request`:
+  - Missing `from` or `to` parameter (`"Both 'from' and 'to' query parameters are required for comparison."`).
+  - Evaluations belong to different assessments (`"Cannot compare evaluations belonging to different assessments."`).
+  - Invalid assessment ID or revision number format.
+- `404 Not Found`:
+  - Assessment not found (`"Assessment not found"`).
+  - One or both evaluations not found (`"Baseline revision not found: 1"` or `"Target revision not found: 99"`).
 
 ---
 
