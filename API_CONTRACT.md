@@ -434,18 +434,19 @@ Retrieves AI-authorship signal transparency observations.
 
 ## 2. GitHub Webhook API
 
-### `POST /api/webhooks/github`
-Receives GitHub `push` event payloads to update assessments in real-time.
+### `POST /api/webhooks/github` (and `POST /api/webhook/github`)
+Receives GitHub `push` event payloads to update assessments in real-time. Automatically verifies HMAC-SHA-256 signatures, deduplicates deliveries using GitHub's delivery ID, sequences rapid successive pushes to prevent race conditions, and invokes the shared core evaluation engine (`evaluateRepositoryCore`).
 
 **Headers:**
-- `X-GitHub-Event: push`
+- `X-GitHub-Event: push` (also supports `ping`)
 - `X-GitHub-Delivery: [unique UUID]`
 - `X-Hub-Signature-256: sha256=[hmac-hex-digest]`
 
-**Response (`200 OK`):**
+**Response (`200 OK` - Reassessment Completed):**
 ```json
 {
   "success": true,
+  "status": "processed",
   "message": "Reassessment completed successfully. Created revision #2.",
   "deliveryId": "del-8f2c-1a0e",
   "newRevisionNumber": 2,
@@ -453,12 +454,53 @@ Receives GitHub `push` event payloads to update assessments in real-time.
 }
 ```
 
-**Error (`401 Unauthorized`):**
+**Response (`200 OK` - Duplicate Delivery or Commit Skipped):**
 ```json
 {
-  "error": "Invalid webhook signature: HMAC SHA-256 check failed."
+  "success": true,
+  "status": "duplicate",
+  "message": "Delivery del-8f2c-1a0e has already been processed. Skipping duplicate.",
+  "deliveryId": "del-8f2c-1a0e"
 }
 ```
+
+**Response (`200 OK` - Ignored Non-Default Branch, Tag, or Unknown Repo):**
+```json
+{
+  "success": true,
+  "status": "ignored",
+  "message": "Push to \"refs/heads/feature/x\" ignored. ProofLoop only reassesses pushes to refs/heads/main.",
+  "deliveryId": "del-8f2c-1a0e"
+}
+```
+
+**Error (`401 Unauthorized` - Missing or Invalid Signature):**
+```json
+{
+  "error": "Invalid webhook signature: HMAC SHA-256 check failed.",
+  "status": "invalid_signature",
+  "deliveryId": "del-8f2c-1a0e"
+}
+```
+
+**Error (`400 Bad Request` - Malformed Payload):**
+```json
+{
+  "error": "Malformed JSON payload in webhook delivery.",
+  "status": "bad_payload",
+  "deliveryId": "del-8f2c-1a0e"
+}
+```
+
+**Error (`500 Internal Server Error` - Evaluation Failure):**
+```json
+{
+  "error": "Reassessment failed: Rate limit exceeded. Previous successful revision was preserved.",
+  "status": "error",
+  "deliveryId": "del-8f2c-1a0e"
+}
+```
+*Note: In the event of a 500 failure, the delivery is NOT recorded as processed, ensuring GitHub's "Redeliver" retry mechanism will succeed on subsequent attempts.*
 
 ---
 

@@ -338,12 +338,22 @@ function saveRevisionInternal(db: DatabaseSync, rev: AssessmentRevision): void {
   const updateStmt = db.prepare(`
     UPDATE assessments
     SET latest_commit_sha = ?, current_revision_number = ?, updated_at = ?
-    WHERE id = ?
+    WHERE id = ? AND (? >= current_revision_number)
   `);
-  updateStmt.run(rev.commitSha, rev.revisionNumber, rev.createdAt, rev.assessmentId);
+  updateStmt.run(rev.commitSha, rev.revisionNumber, rev.createdAt, rev.assessmentId, rev.revisionNumber);
 
   // Enforce evaluation history retention policy: retain only the 10 most recent evaluations atomically
   enforceEvaluationRetentionInternal(db, rev.assessmentId, MAX_RETAINED_EVALUATIONS_PER_ASSESSMENT);
+}
+
+export function hasRevisionForCommit(assessmentId: string, commitSha: string): boolean {
+  const db = getDatabase();
+  const row = db.prepare(`
+    SELECT 1 FROM revisions
+    WHERE assessment_id = ? AND commit_sha = ?
+    LIMIT 1
+  `).get(assessmentId, commitSha);
+  return Boolean(row);
 }
 
 export function saveRevision(rev: AssessmentRevision): void {

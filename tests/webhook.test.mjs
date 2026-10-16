@@ -216,3 +216,51 @@ test('a failed delivery can be retried with the same delivery id', async () => {
   assert.equal(retried.status, 'processed', 'redelivery must not be skipped as a duplicate');
   assert.equal(revisionCount(), before + 1);
 });
+
+test('missing signature header when secret is configured is rejected with 401', async () => {
+  const raw = JSON.stringify(pushPayload());
+  const before = revisionCount();
+  const res = await processPushWebhook(raw, {
+    'x-github-delivery': 'no-sig-1',
+    'x-github-event': 'push'
+    // missing x-hub-signature-256
+  });
+  assert.equal(res.success, false);
+  assert.equal(res.status, 'invalid_signature');
+  assert.equal(revisionCount(), before);
+});
+
+test('rapid successive pushes with distinct commits create ordered revisions without race conditions', async () => {
+  const before = revisionCount();
+  const p1 = pushPayload();
+  const p2 = pushPayload();
+
+  // Send both pushes concurrently
+  const [res1, res2] = await Promise.all([
+    send(p1, { delivery: 'rapid-push-1' }),
+    send(p2, { delivery: 'rapid-push-2' })
+  ]);
+
+  assert.equal(res1.status, 'processed');
+  assert.equal(res2.status, 'processed');
+  assert.equal(revisionCount(), before + 2);
+
+  const updatedAssessment = getAssessment(SAMPLE_ASSESSMENT.id);
+  assert.equal(updatedAssessment.currentRevisionNumber, before + 2);
+  // Ensure the latest revision accurately reflects the second processed push commit
+  assert.equal(updatedAssessment.latestRevision.commitSha, p2.after.substring(0, 7));
+});
+
+test('pushing an already-evaluated commit SHA is detected and skipped as duplicate', async () => {
+  const p = pushPayload();
+  const first = await send(p, { delivery: 'commit-dup-1' });
+  assert.equal(first.status, 'processed');
+  const countAfterFirst = revisionCount();
+
+  // Send a different delivery ID but with the EXACT same commit SHA
+  const second = await send(p, { delivery: 'commit-dup-2' });
+  assert.equal(second.status, 'duplicate');
+  assert.match(second.message, /already evaluated/i);
+  assert.equal(revisionCount(), countAfterFirst);
+});
+
