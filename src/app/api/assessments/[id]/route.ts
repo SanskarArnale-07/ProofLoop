@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getAssessment } from '@/lib/db';
-import { validateId } from '@/lib/validation';
-import { createErrorResponse } from '@/lib/errors';
+import { ensureSampleDataSeeded } from '@/lib/sample-data';
 
 export async function GET(
   req: NextRequest,
@@ -21,6 +20,7 @@ export async function GET(
       assessment
     });
   } catch (error: unknown) {
-    return createErrorResponse(error, 'Failed to fetch assessment');
+    const message = error instanceof Error ? error.message : 'Failed to fetch assessment';
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }

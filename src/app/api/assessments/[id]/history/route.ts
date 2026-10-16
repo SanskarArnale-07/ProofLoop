@@ -1,7 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getEvaluationHistory, getAssessment } from '@/lib/db';
-import { validateId, validatePositiveInteger } from '@/lib/validation';
-import { createErrorResponse } from '@/lib/errors';
 
 export async function GET(
   req: NextRequest,
@@ -9,12 +7,12 @@ export async function GET(
 ) {
   try {
     const { id } = await params;
-    const idVal = validateId(id, 'Assessment ID');
-    if (!idVal.valid || !idVal.cleanId) {
-      return NextResponse.json({ error: idVal.error || 'Invalid assessment ID format.' }, { status: 400 });
+    const cleanId = id?.trim();
+    if (!cleanId) {
+      return NextResponse.json({ error: 'Assessment ID is required.' }, { status: 400 });
     }
 
-    const assessment = getAssessment(idVal.cleanId);
+    const assessment = getAssessment(cleanId);
     if (!assessment) {
       return NextResponse.json({ error: 'Assessment not found' }, { status: 404 });
     }
@@ -26,33 +24,30 @@ export async function GET(
     let limit = 50;
     const limitStr = searchParams.get('limit');
     if (limitStr) {
-      const limitVal = validatePositiveInteger(limitStr, 'limit', 1, 100);
-      if (!limitVal.valid || limitVal.value === undefined) {
-        return NextResponse.json({ error: limitVal.error || 'Invalid limit parameter' }, { status: 400 });
+      const parsedLimit = parseInt(limitStr.trim(), 10);
+      if (!isNaN(parsedLimit) && parsedLimit > 0) {
+        limit = Math.min(parsedLimit, 100);
       }
-      limit = limitVal.value;
     }
 
     let offset = 0;
     const offsetStr = searchParams.get('offset');
     const pageStr = searchParams.get('page');
     if (offsetStr) {
-      const offsetVal = validatePositiveInteger(offsetStr, 'offset', 0, 100000);
-      if (!offsetVal.valid || offsetVal.value === undefined) {
-        return NextResponse.json({ error: offsetVal.error || 'Invalid offset parameter' }, { status: 400 });
+      const parsedOffset = parseInt(offsetStr.trim(), 10);
+      if (!isNaN(parsedOffset) && parsedOffset >= 0) {
+        offset = parsedOffset;
       }
-      offset = offsetVal.value;
     } else if (pageStr) {
-      const pageVal = validatePositiveInteger(pageStr, 'page', 1, 10000);
-      if (!pageVal.valid || pageVal.value === undefined) {
-        return NextResponse.json({ error: pageVal.error || 'Invalid page parameter' }, { status: 400 });
+      const parsedPage = parseInt(pageStr.trim(), 10);
+      if (!isNaN(parsedPage) && parsedPage > 0) {
+        offset = (parsedPage - 1) * limit;
       }
-      offset = (pageVal.value - 1) * limit;
     }
 
     const includeEvidence = searchParams.get('includeEvidence') === 'true';
 
-    const historyResult = getEvaluationHistory(idVal.cleanId, {
+    const historyResult = getEvaluationHistory(cleanId, {
       order,
       limit,
       offset,
@@ -61,7 +56,7 @@ export async function GET(
 
     return NextResponse.json({
       success: true,
-      assessmentId: idVal.cleanId,
+      assessmentId: cleanId,
       evaluations: historyResult.evaluations,
       latestEvaluation: historyResult.latestEvaluation,
       pagination: {
@@ -72,6 +67,7 @@ export async function GET(
       }
     });
   } catch (error: unknown) {
-    return createErrorResponse(error, 'Failed to fetch evaluation history');
+    const message = error instanceof Error ? error.message : 'Failed to fetch evaluation history';
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }

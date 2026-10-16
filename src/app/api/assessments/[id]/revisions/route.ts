@@ -1,7 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getEvaluationHistory, getAssessment, compareRevisions, getRevisionHistory } from '@/lib/db';
-import { validateId, validatePositiveInteger } from '@/lib/validation';
-import { createErrorResponse } from '@/lib/errors';
 
 export async function GET(
   req: NextRequest,
@@ -9,7 +7,12 @@ export async function GET(
 ) {
   try {
     const { id } = await params;
-    const assessment = getAssessment(id);
+    const cleanId = id?.trim();
+    if (!cleanId) {
+      return NextResponse.json({ error: 'Assessment ID is required.' }, { status: 400 });
+    }
+
+    const assessment = getAssessment(cleanId);
     if (!assessment) {
       return NextResponse.json({ error: 'Assessment not found' }, { status: 404 });
     }
@@ -28,37 +31,25 @@ export async function GET(
 
     // If both comparison query parameters are provided, return the evaluation comparison
     if (from && to) {
-      let fromParam: number | string = from;
-      if (/^\d+$/.test(from.trim())) {
-        const fromVal = validatePositiveInteger(from, '"from" revision number', 1, 100000);
-        if (!fromVal.valid || fromVal.value === undefined) {
-          return NextResponse.json({ error: fromVal.error || 'Invalid revision numbers for comparison' }, { status: 400 });
+      let fromParam: number | string = from.trim();
+      if (/^\d+$/.test(fromParam)) {
+        const parsedNum = parseInt(fromParam, 10);
+        if (isNaN(parsedNum) || parsedNum <= 0) {
+          return NextResponse.json({ error: 'Invalid revision numbers for comparison' }, { status: 400 });
         }
-        fromParam = fromVal.value;
-      } else {
-        const idCheck = validateId(from, '"from" revision ID');
-        if (!idCheck.valid) {
-          return NextResponse.json({ error: idCheck.error || 'Invalid revision ID format' }, { status: 400 });
-        }
-        fromParam = idCheck.cleanId!;
+        fromParam = parsedNum;
       }
 
-      let toParam: number | string = to;
-      if (/^\d+$/.test(to.trim())) {
-        const toVal = validatePositiveInteger(to, '"to" revision number', 1, 100000);
-        if (!toVal.valid || toVal.value === undefined) {
-          return NextResponse.json({ error: toVal.error || 'Invalid revision numbers for comparison' }, { status: 400 });
+      let toParam: number | string = to.trim();
+      if (/^\d+$/.test(toParam)) {
+        const parsedNum = parseInt(toParam, 10);
+        if (isNaN(parsedNum) || parsedNum <= 0) {
+          return NextResponse.json({ error: 'Invalid revision numbers for comparison' }, { status: 400 });
         }
-        toParam = toVal.value;
-      } else {
-        const idCheck = validateId(to, '"to" revision ID');
-        if (!idCheck.valid) {
-          return NextResponse.json({ error: idCheck.error || 'Invalid revision ID format' }, { status: 400 });
-        }
-        toParam = idCheck.cleanId!;
+        toParam = parsedNum;
       }
 
-      const comparison = compareRevisions(idVal.cleanId, fromParam, toParam);
+      const comparison = compareRevisions(cleanId, fromParam, toParam);
       if (!comparison) {
         return NextResponse.json({ error: 'One or both revisions could not be found for comparison' }, { status: 404 });
       }
@@ -73,33 +64,30 @@ export async function GET(
     let limit = 50;
     const limitStr = searchParams.get('limit');
     if (limitStr) {
-      const limitVal = validatePositiveInteger(limitStr, 'limit', 1, 100);
-      if (!limitVal.valid || limitVal.value === undefined) {
-        return NextResponse.json({ error: limitVal.error || 'Invalid limit parameter' }, { status: 400 });
+      const parsedLimit = parseInt(limitStr.trim(), 10);
+      if (!isNaN(parsedLimit) && parsedLimit > 0) {
+        limit = Math.min(parsedLimit, 100);
       }
-      limit = limitVal.value;
     }
 
     let offset = 0;
     const offsetStr = searchParams.get('offset');
     const pageStr = searchParams.get('page');
     if (offsetStr) {
-      const offsetVal = validatePositiveInteger(offsetStr, 'offset', 0, 100000);
-      if (!offsetVal.valid || offsetVal.value === undefined) {
-        return NextResponse.json({ error: offsetVal.error || 'Invalid offset parameter' }, { status: 400 });
+      const parsedOffset = parseInt(offsetStr.trim(), 10);
+      if (!isNaN(parsedOffset) && parsedOffset >= 0) {
+        offset = parsedOffset;
       }
-      offset = offsetVal.value;
     } else if (pageStr) {
-      const pageVal = validatePositiveInteger(pageStr, 'page', 1, 10000);
-      if (!pageVal.valid || pageVal.value === undefined) {
-        return NextResponse.json({ error: pageVal.error || 'Invalid page parameter' }, { status: 400 });
+      const parsedPage = parseInt(pageStr.trim(), 10);
+      if (!isNaN(parsedPage) && parsedPage > 0) {
+        offset = (parsedPage - 1) * limit;
       }
-      offset = (pageVal.value - 1) * limit;
     }
 
     const includeEvidence = searchParams.get('includeEvidence') === 'true';
 
-    const historyResult = getEvaluationHistory(idVal.cleanId, {
+    const historyResult = getEvaluationHistory(cleanId, {
       order,
       limit,
       offset,
@@ -107,11 +95,11 @@ export async function GET(
     });
 
     // Also supply revisions array for backward compatibility with frontend
-    const revisions = getRevisionHistory(idVal.cleanId);
+    const revisions = getRevisionHistory(cleanId);
 
     return NextResponse.json({
       success: true,
-      assessmentId: idVal.cleanId,
+      assessmentId: cleanId,
       evaluations: historyResult.evaluations,
       latestEvaluation: historyResult.latestEvaluation,
       revisions,

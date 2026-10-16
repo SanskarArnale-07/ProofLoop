@@ -7,7 +7,12 @@ export async function GET(
 ) {
   try {
     const { id } = await params;
-    const assessment = getAssessment(id);
+    const cleanId = id?.trim();
+    if (!cleanId) {
+      return NextResponse.json({ error: 'Assessment ID is required.' }, { status: 400 });
+    }
+
+    const assessment = getAssessment(cleanId);
     if (!assessment) {
       return NextResponse.json({ error: 'Assessment not found' }, { status: 404 });
     }
@@ -23,37 +28,25 @@ export async function GET(
       );
     }
 
-    let fromParam: number | string = fromStr;
-    if (/^\d+$/.test(fromStr.trim())) {
-      const fromVal = validatePositiveInteger(fromStr, '"from" evaluation number', 1, 100000);
-      if (!fromVal.valid || fromVal.value === undefined) {
-        return NextResponse.json({ error: fromVal.error || 'Invalid evaluation numbers provided.' }, { status: 400 });
+    let fromParam: number | string = fromStr.trim();
+    if (/^\d+$/.test(fromParam)) {
+      const parsedNum = parseInt(fromParam, 10);
+      if (isNaN(parsedNum) || parsedNum <= 0) {
+        return NextResponse.json({ error: 'Invalid evaluation numbers provided.' }, { status: 400 });
       }
-      fromParam = fromVal.value;
-    } else {
-      const idCheck = validateId(fromStr, '"from" evaluation ID');
-      if (!idCheck.valid) {
-        return NextResponse.json({ error: idCheck.error || 'Invalid evaluation ID format.' }, { status: 400 });
-      }
-      fromParam = idCheck.cleanId!;
+      fromParam = parsedNum;
     }
 
-    let toParam: number | string = toStr;
-    if (/^\d+$/.test(toStr.trim())) {
-      const toVal = validatePositiveInteger(toStr, '"to" evaluation number', 1, 100000);
-      if (!toVal.valid || toVal.value === undefined) {
-        return NextResponse.json({ error: toVal.error || 'Invalid evaluation numbers provided.' }, { status: 400 });
+    let toParam: number | string = toStr.trim();
+    if (/^\d+$/.test(toParam)) {
+      const parsedNum = parseInt(toParam, 10);
+      if (isNaN(parsedNum) || parsedNum <= 0) {
+        return NextResponse.json({ error: 'Invalid evaluation numbers provided.' }, { status: 400 });
       }
-      toParam = toVal.value;
-    } else {
-      const idCheck = validateId(toStr, '"to" evaluation ID');
-      if (!idCheck.valid) {
-        return NextResponse.json({ error: idCheck.error || 'Invalid evaluation ID format.' }, { status: 400 });
-      }
-      toParam = idCheck.cleanId!;
+      toParam = parsedNum;
     }
 
-    const comparison = compareRevisions(idVal.cleanId, fromParam, toParam);
+    const comparison = compareRevisions(cleanId, fromParam, toParam);
     if (!comparison) {
       return NextResponse.json(
         { error: `Could not compare evaluations "${fromParam}" and "${toParam}". Check that both evaluation records exist for this assessment.` },
@@ -63,6 +56,7 @@ export async function GET(
 
     return NextResponse.json({ success: true, comparison });
   } catch (error: unknown) {
-    return createErrorResponse(error, 'Failed to compare evaluations');
+    const message = error instanceof Error ? error.message : 'Failed to compare evaluations';
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }

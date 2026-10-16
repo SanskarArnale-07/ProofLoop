@@ -1,13 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { listAssessments, saveAssessment } from '@/lib/db';
-import { listAssessments, saveAssessment } from '@/lib/db';
 import { ensureSampleDataSeeded } from '@/lib/sample-data';
 import { parseGitHubRepoUrl, fetchRepoDetails, fetchRepoCommits, fetchRepoTree } from '@/lib/github';
 import { analyzeRepositoryAgainstRequirements } from '@/lib/analyzer';
 import { Assessment, AssessmentRevision, ActivityEvent, InternshipPosting } from '@/lib/types';
 import { SCORING_RULE_VERSION } from '@/lib/scoring';
-import { safeParseJson, validateInternshipPayload, validateRepoUrlInput, extractAuthToken } from '@/lib/validation';
-import { createErrorResponse } from '@/lib/errors';
 
 export async function GET() {
   try {
@@ -15,42 +12,51 @@ export async function GET() {
     const assessments = listAssessments();
     return NextResponse.json({ success: true, assessments });
   } catch (error: unknown) {
-    return createErrorResponse(error, 'Failed to list assessments');
+    const message = error instanceof Error ? error.message : 'Failed to list assessments';
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }
 
 export async function POST(req: NextRequest) {
   try {
-    const { data: body, errorResponse } = await safeParseJson<Record<string, unknown>>(req);
-    if (errorResponse) {
-      return errorResponse;
+    const body = await req.json().catch(() => null);
+    if (!body || typeof body !== 'object') {
+      return NextResponse.json({ error: 'Invalid JSON request payload' }, { status: 400 });
     }
 
-    const { internship, repoUrl, token } = (body || {}) as {
+    const { internship, repoUrl, token } = body as {
       internship?: unknown;
       repoUrl?: unknown;
       token?: unknown;
     };
 
-    const internshipVal = validateInternshipPayload(internship);
-    if (!internshipVal.valid || !internshipVal.cleanPosting) {
+    if (!internship || typeof internship !== 'object') {
       return NextResponse.json(
-        { error: internshipVal.error || 'Valid internship posting with requirements is required.' },
+        { error: 'Valid internship posting with requirements is required.' },
         { status: 400 }
       );
     }
 
-    const repoVal = validateRepoUrlInput(repoUrl);
-    if (!repoVal.valid || !repoVal.cleanUrl) {
+    const posting = internship as Record<string, unknown>;
+    if (!posting.requirements || !Array.isArray(posting.requirements) || posting.requirements.length === 0) {
       return NextResponse.json(
-        { error: repoVal.error || 'Valid repository URL is required.' },
+        { error: 'Valid internship posting with requirements is required.' },
         { status: 400 }
       );
     }
 
-    const authToken = extractAuthToken(req, token);
+    if (!repoUrl || typeof repoUrl !== 'string' || !repoUrl.trim()) {
+      return NextResponse.json(
+        { error: 'Repository URL is required.' },
+        { status: 400 }
+      );
+    }
 
-    const parsed = parseGitHubRepoUrl(repoVal.cleanUrl);
+    const authHeader = req.headers.get('authorization');
+    const bearerToken = authHeader?.startsWith('Bearer ') ? authHeader.slice(7).trim() : undefined;
+    const authToken = (typeof token === 'string' && token.trim()) ? token.trim() : bearerToken;
+
+    const parsed = parseGitHubRepoUrl(repoUrl.trim());
     if (!parsed) {
       return NextResponse.json(
         { error: 'Invalid GitHub repository format. Expected: https://github.com/owner/repo or owner/repo' },
@@ -160,6 +166,8 @@ export async function POST(req: NextRequest) {
       assessment
     }, { status: 201 });
   } catch (error: unknown) {
-    return createErrorResponse(error, 'Internal server error during assessment');
+    const message = error instanceof Error ? error.message : 'Internal server error during assessment';
+    console.error('Assessment creation error:', error);
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }
