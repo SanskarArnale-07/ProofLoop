@@ -6,18 +6,13 @@ import { Navigation } from '@/components/Navigation';
 import { Header } from '@/components/Header';
 import { SkillCard } from '@/components/SkillCard';
 import { CodeInspector } from '@/components/CodeInspector';
-import { ActivityFeed } from '@/components/ActivityFeed';
 import { WebhookSimulatorModal } from '@/components/WebhookSimulatorModal';
 import { Assessment, RepositoryEvidence, EvidenceStatus } from '@/lib/types';
 import {
   ShieldCheck,
   CircleDashed,
   AlertCircle,
-  Radio,
-  FileCheck2,
-  Sparkles,
-  GitCommit,
-  Filter
+  Radio
 } from 'lucide-react';
 
 function DashboardContent() {
@@ -127,7 +122,7 @@ function DashboardContent() {
     setAssessment(updated);
   };
 
-  const handleWebhookSuccess = (updated: Assessment, promoted: string[]) => {
+  const handleWebhookSuccess = (updated: Assessment) => {
     setAssessment(updated);
     setSimulatorOpen(false);
   };
@@ -204,101 +199,62 @@ function DashboardContent() {
           </div>
         </section>
 
-        {/* Main 2-Column Workspace */}
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
-          {/* Main Column: Requirement Breakdown */}
-          <div className="lg:col-span-8 space-y-4">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-2 border-b border-zinc-200 dark:border-zinc-800">
-              <div className="flex items-center space-x-2">
-                <h3 className="font-editorial text-xl font-bold text-zinc-900 dark:text-zinc-100">
-                  Evaluated Requirements ({filteredEvidence.length})
-                </h3>
-              </div>
-
-              {/* Status Filter Tabs */}
-              <div className="flex items-center space-x-1 font-mono text-[11px]">
-                <button
-                  onClick={() => setStatusFilter('all')}
-                  className={`px-2.5 py-1 rounded transition-colors ${
-                    statusFilter === 'all'
-                      ? 'bg-black text-white dark:bg-white dark:text-black font-bold'
-                      : 'text-zinc-500 hover:text-black dark:hover:text-white'
-                  }`}
-                >
-                  All ({evidenceList.length})
-                </button>
-                <button
-                  onClick={() => setStatusFilter('demonstrated')}
-                  className={`px-2.5 py-1 rounded transition-colors ${
-                    statusFilter === 'demonstrated'
-                      ? 'bg-black text-white dark:bg-white dark:text-black font-bold'
-                      : 'text-zinc-500 hover:text-black dark:hover:text-white'
-                  }`}
-                >
-                  Demonstrated ({demonstratedCount})
-                </button>
-                <button
-                  onClick={() => setStatusFilter('not_demonstrated')}
-                  className={`px-2.5 py-1 rounded transition-colors ${
-                    statusFilter === 'not_demonstrated'
-                      ? 'bg-black text-white dark:bg-white dark:text-black font-bold'
-                      : 'text-zinc-500 hover:text-black dark:hover:text-white'
-                  }`}
-                >
-                  Gaps ({notDemonstratedCount})
-                </button>
-              </div>
-            </div>
-
-            {/* List of Skill Cards */}
-            <div className="space-y-4">
-              {filteredEvidence.map((ev) => (
-                <SkillCard
-                  key={ev.requirementId}
-                  evidence={ev}
-                  onInspect={handleInspect}
-                />
-              ))}
-            </div>
-          </div>
-
-          {/* Right Column: Recent Activity Feed */}
-          <div className="lg:col-span-4 space-y-4">
-            <div className="flex items-center justify-between pb-2 border-b border-zinc-200 dark:border-zinc-800">
+        {/* Evaluated Requirements */}
+        <section className="space-y-4 w-full">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-2 border-b border-zinc-200 dark:border-zinc-800">
+            <div className="flex items-center space-x-2">
               <h3 className="font-editorial text-xl font-bold text-zinc-900 dark:text-zinc-100">
-                Recent Activity
+                Evaluated Requirements ({filteredEvidence.length})
               </h3>
-              <span className="text-[11px] font-mono text-zinc-400">
-                Revision #{assessment.currentRevisionNumber}
-              </span>
             </div>
 
-            <ActivityFeed activities={assessment.recentActivity} />
-
-            {/* Gap-to-Proof Roadmap Shortcut Box */}
-            {assessment.tasks && assessment.tasks.length > 0 && (
-              <div className="p-5 bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded font-mono text-xs space-y-3">
-                <div className="flex items-center justify-between">
-                  <span className="font-bold text-zinc-900 dark:text-zinc-100">
-                    Gap-to-Proof Roadmap
-                  </span>
-                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-zinc-100 dark:bg-zinc-900 text-zinc-600 dark:text-zinc-400">
-                    {assessment.tasks.length} Actionable Tasks
-                  </span>
-                </div>
-                <p className="text-zinc-600 dark:text-zinc-400 font-sans text-xs leading-relaxed">
-                  Turn missing requirements into demonstrable proof with guided implementation tasks.
-                </p>
-                <a
-                  href={`/dashboard/roadmap?id=${assessment.id}`}
-                  className="block text-center py-2 px-3 bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-900 dark:hover:bg-zinc-800 rounded text-zinc-800 dark:text-zinc-200 font-medium transition-colors"
-                >
-                  View Complete Roadmap →
-                </a>
-              </div>
-            )}
+            {/* Status Filter Tabs */}
+            <div className="flex items-center space-x-1 font-mono text-[11px]">
+              <button
+                onClick={() => setStatusFilter('all')}
+                className={`px-2.5 py-1 rounded transition-colors ${
+                  statusFilter === 'all'
+                    ? 'bg-black text-white dark:bg-white dark:text-black font-bold'
+                    : 'text-zinc-500 hover:text-black dark:hover:text-white'
+                }`}
+              >
+                All ({evidenceList.length})
+              </button>
+              <button
+                onClick={() => setStatusFilter('demonstrated')}
+                className={`px-2.5 py-1 rounded transition-colors ${
+                  statusFilter === 'demonstrated'
+                    ? 'bg-black text-white dark:bg-white dark:text-black font-bold'
+                    : 'text-zinc-500 hover:text-black dark:hover:text-white'
+                }`}
+              >
+                Demonstrated ({demonstratedCount})
+              </button>
+              <button
+                onClick={() => setStatusFilter('not_demonstrated')}
+                className={`px-2.5 py-1 rounded transition-colors ${
+                  statusFilter === 'not_demonstrated'
+                    ? 'bg-black text-white dark:bg-white dark:text-black font-bold'
+                    : 'text-zinc-500 hover:text-black dark:hover:text-white'
+                }`}
+              >
+                Gaps ({notDemonstratedCount})
+              </button>
+            </div>
           </div>
-        </div>
+
+          {/* List of Skill Cards */}
+          <div className="space-y-4">
+            {filteredEvidence.map((ev, index) => (
+              <SkillCard
+                key={ev.requirementId}
+                evidence={ev}
+                onInspect={handleInspect}
+                index={index}
+              />
+            ))}
+          </div>
+        </section>
       </div>
 
       {/* Split Panel Code Inspector */}
