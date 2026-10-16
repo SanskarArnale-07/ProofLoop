@@ -45,6 +45,11 @@ const {
   SAMPLE_ASSESSMENT
 } = jiti('../src/lib/sample-data.ts');
 
+const {
+  evaluateRepositoryCore,
+  analyzeRepositoryAgainstRequirements
+} = jiti('../src/lib/analyzer.ts');
+
 // ============================================================================
 // 1. Multiple Commits and Commit-History Pagination
 // ============================================================================
@@ -740,3 +745,227 @@ test('18. Retention Policy - Failed evaluations do not delete; isolation & audit
   const asmtARecord = getAssessment(asmtA);
   assert.ok(asmtARecord.recentActivity.some(a => a.eventType === 'reassessment_failed'), 'Failure must be preserved in activity log');
 });
+
+// ============================================================================
+// 19. Requirements with Strong, Partial, Missing, and Insufficient Evidence
+// ============================================================================
+test('19. Requirement Evidence Spectrum - Strong, partial, missing, and insufficient (empty repo)', async () => {
+  const reqs = [
+    { id: 'req-api', category: 'backend', title: 'REST API Development & Validation', description: 'API routes', importance: 'required' },
+    { id: 'req-db', category: 'database', title: 'Database Schema Design & SQL Queries', description: 'SQL tables', importance: 'required' },
+    { id: 'req-devops', category: 'devops', title: 'Docker & Containerization', description: 'Dockerfiles', importance: 'preferred' }
+  ];
+
+  // 1. Repository with Strong API evidence and Partial Database evidence
+  const localFileCache = {
+    'src/routes/users.ts': `
+      import { Router } from 'express';
+      export const router = Router();
+      router.get('/users', async (req, res) => {
+        res.json({ users: [] });
+      });
+    `,
+    'db/config.ts': `
+      export const dbConfig = { host: 'localhost', port: 5432 };
+    `
+  };
+
+  const fileTree = [
+    { path: 'src/routes/users.ts', mode: '100644', type: 'blob', sha: 'c1' },
+    { path: 'db/config.ts', mode: '100644', type: 'blob', sha: 'c2' }
+  ];
+
+  const analysis = await analyzeRepositoryAgainstRequirements({
+    owner: 'testdev',
+    repo: 'sample-app',
+    defaultBranch: 'main',
+    commitSha: 'commit-sha-123',
+    fileTree,
+    commits: [
+      { sha: 'commit-sha-122', message: 'feat: add users api route', authorName: 'Alex Dev', timestamp: new Date(Date.now() - 3600000).toISOString(), filesChanged: ['src/routes/users.ts'] },
+      { sha: 'commit-sha-123', message: 'refactor: refine users controller', authorName: 'Alex Dev', timestamp: new Date().toISOString(), filesChanged: ['src/routes/users.ts'] }
+    ],
+    localFileCache
+  }, reqs);
+
+  // Strong requirement verification
+  const apiEv = analysis.evidenceList.find(e => e.requirementId === 'req-api');
+  assert.ok(apiEv, 'API evidence must be generated');
+  assert.equal(apiEv.status, 'demonstrated');
+  assert.equal(apiEv.evidenceType, 'direct_implementation');
+  assert.equal(apiEv.evidenceStrength, 'strong');
+  assert.ok(apiEv.filePath && apiEv.filePath.includes('src/routes/users.ts'));
+  assert.ok(apiEv.lineStart && apiEv.lineStart > 0);
+  assert.ok(apiEv.codeExcerpt && apiEv.codeExcerpt.includes('router.get'));
+  assert.ok(apiEv.confidence >= 85, 'Strong evidence should have high grounded confidence');
+
+  // Partial requirement verification
+  const dbEv = analysis.evidenceList.find(e => e.requirementId === 'req-db');
+  assert.ok(dbEv, 'DB evidence must be generated');
+  assert.equal(dbEv.status, 'partial');
+  assert.equal(dbEv.evidenceStrength, 'moderate');
+  assert.ok(dbEv.filePath && dbEv.filePath.includes('db/config.ts'));
+  assert.ok(dbEv.explanation.includes('Partial evidence'));
+
+  // Missing requirement verification (active tree scanned, confirmed absent)
+  const devopsEv = analysis.evidenceList.find(e => e.requirementId === 'req-devops');
+  assert.ok(devopsEv, 'Devops evidence must be generated');
+  assert.equal(devopsEv.status, 'not_demonstrated');
+  assert.equal(devopsEv.evidenceType, 'none');
+  assert.ok(devopsEv.confidence >= 85, 'Confirmed negative finding across active tree should have high confidence');
+
+  // 2. Empty repository verification (Insufficient Evidence)
+  const emptyAnalysis = await analyzeRepositoryAgainstRequirements({
+    owner: 'testdev',
+    repo: 'empty-repo',
+    defaultBranch: 'main',
+    commitSha: 'commit-empty',
+    fileTree: [],
+    commits: []
+  }, reqs);
+
+  assert.equal(emptyAnalysis.analysisScope.filesInspected, 0);
+  assert.equal(emptyAnalysis.analysisScope.truncated, false);
+  for (const ev of emptyAnalysis.evidenceList) {
+    assert.equal(ev.status, 'not_demonstrated');
+    assert.equal(ev.isInsufficientEvidence, true, 'Empty repo must be flagged as insufficient evidence');
+    assert.equal(ev.confidence, 25, 'Empty repo confidence must be low rather than falsely confident failure');
+    assert.ok(ev.explanation.includes('Insufficient repository evidence'), 'Explanation must distinguish empty repo from failure');
+  }
+});
+
+// ============================================================================
+// 20. Anti-Double-Counting and Shared Evidence Safeguards
+// ============================================================================
+test('20. Anti-Double-Counting Safeguards - Identical code cannot inflate multiple requirements', async () => {
+  const reqs = [
+    { id: 'req-api', category: 'backend', title: 'REST API Development & Validation', description: 'API routes', importance: 'required' },
+    { id: 'req-typescript', category: 'core', title: 'TypeScript / Strict Static Typing', description: 'Types', importance: 'required' }
+  ];
+
+  // Repo has ONLY ONE single file: server.ts
+  const localFileCache = {
+    'src/server.ts': `
+      import express from 'express';
+      const app = express();
+      app.get('/health', (req, res) => res.json({ status: 'ok' }));
+    `
+  };
+
+  const fileTree = [
+    { path: 'src/server.ts', mode: '100644', type: 'blob', sha: 'c1' }
+  ];
+
+  const analysis = await analyzeRepositoryAgainstRequirements({
+    owner: 'testdev',
+    repo: 'single-file-app',
+    defaultBranch: 'main',
+    commitSha: 'c1',
+    fileTree,
+    commits: [{ sha: 'c1', message: 'feat: init server', authorName: 'Dev', timestamp: new Date().toISOString(), filesChanged: ['src/server.ts'] }],
+    localFileCache
+  }, reqs);
+
+  const apiEv = analysis.evidenceList.find(e => e.requirementId === 'req-api');
+  const tsEv = analysis.evidenceList.find(e => e.requirementId === 'req-typescript');
+
+  assert.ok(apiEv);
+  assert.ok(tsEv);
+
+  // One of them is primary, the other is detected as shared evidence
+  const sharedEv = [apiEv, tsEv].find(e => e.sharedEvidenceWith && e.sharedEvidenceWith.length > 0);
+  assert.ok(sharedEv, 'One requirement must detect shared overlapping evidence');
+  assert.ok(sharedEv.uncertaintyNotes && sharedEv.uncertaintyNotes.includes('Anti-double-counting'));
+
+  // Base points must be capped so points are not duplicated
+  assert.ok(sharedEv.scoreBreakdown.basePoints <= 15, 'Base points must be capped for duplicate/shared claims');
+  assert.ok(sharedEv.scoreBreakdown.factors.some(f => f.includes('prevent double-counting')));
+});
+
+// ============================================================================
+// 21. Reusable Core Evaluation Engine (evaluateRepositoryCore)
+// ============================================================================
+test('21. Reusable Core Evaluation Engine - Structured results and deterministic narrative', async () => {
+  const result = await evaluateRepositoryCore({
+    repoFullName: 'testuser/core-engine-repo',
+    defaultBranch: 'main',
+    targetCommitSha: 'sha-core-100',
+    requirements: SAMPLE_ASSESSMENT.internship.requirements,
+    triggerType: 'manual',
+    fileTree: [
+      { path: 'src/routes/charge.ts', mode: '100644', type: 'blob', sha: 'c1' },
+      { path: 'tests/charge.test.ts', mode: '100644', type: 'blob', sha: 'c2' },
+      { path: 'Dockerfile', mode: '100644', type: 'blob', sha: 'c3' },
+      { path: 'README.md', mode: '100644', type: 'blob', sha: 'c4' }
+    ],
+    commits: [
+      { sha: 'sha-core-099', message: 'feat: payment routes and Docker setup', authorName: 'Core Dev', timestamp: new Date(Date.now() - 3600000).toISOString(), filesChanged: ['src/routes/charge.ts', 'Dockerfile'] },
+      { sha: 'sha-core-100', message: 'test: add test suite with assertions', authorName: 'Core Dev', timestamp: new Date().toISOString(), filesChanged: ['tests/charge.test.ts'] }
+    ],
+    localFileCache: {
+      'src/routes/charge.ts': 'export async function POST(req, res) { return res.json({ ok: true }); }',
+      'tests/charge.test.ts': 'test("charge payment", () => { assert.equal(1, 1); expect(true).toBe(true); });',
+      'Dockerfile': 'FROM node:20-alpine\nWORKDIR /app\nCOPY . .\nCMD ["node", "app.js"]',
+      'README.md': '# Core Engine Project\nDocumented setup instructions.'
+    }
+  });
+
+  assert.equal(result.success, true);
+  assert.ok(Array.isArray(result.evidenceList));
+  assert.ok(result.summary);
+  assert.equal(result.summary.scoringRuleVersion, SCORING_RULE_VERSION);
+  assert.ok(result.summary.demonstratedCount > 0);
+  assert.ok(result.analysisScope);
+  assert.equal(result.analysisScope.branch, 'main');
+  assert.ok(result.aiSignals);
+
+  // Check deterministic calculation summary
+  for (const ev of result.evidenceList) {
+    assert.ok(ev.scoreBreakdown, 'Each evidence must have a scoreBreakdown');
+    assert.ok(ev.scoreBreakdown.calculationSummary, 'Must contain a documented calculation narrative');
+    assert.ok(ev.scoreBreakdown.calculationSummary.includes('Breakdown:'), 'Summary must specify component points');
+  }
+});
+
+// ============================================================================
+// 22. Error Resilience and Failure Preservation (Missing Repo, Malformed Input)
+// ============================================================================
+test('22. Error Resilience - Inaccessible repositories return structured error without crashing', async () => {
+  // 1. Invalid input validation
+  const invalidResult = await evaluateRepositoryCore({
+    repoFullName: '',
+    requirements: []
+  });
+  assert.equal(invalidResult.success, false);
+  assert.equal(invalidResult.errorCode, 'INVALID_INPUT');
+
+  // 2. Malformed repo URL
+  const malformedResult = await evaluateRepositoryCore({
+    repoFullName: 'not-a-valid-url-format',
+    requirements: SAMPLE_ASSESSMENT.internship.requirements
+  });
+  assert.equal(malformedResult.success, false);
+  assert.equal(malformedResult.errorCode, 'INVALID_INPUT');
+
+  // 3. Failure preservation in database
+  const asmtId = `asmt-fail-preserve-${Date.now()}`;
+  saveAssessment({
+    ...SAMPLE_ASSESSMENT,
+    id: asmtId,
+    latestRevision: {
+      ...SAMPLE_ASSESSMENT.latestRevision,
+      id: `rev-${asmtId}-1`,
+      assessmentId: asmtId,
+      revisionNumber: 1
+    }
+  });
+
+  // Record failure
+  recordAssessmentFailure(asmtId, 'Simulated GitHub 404 Not Found error');
+
+  const preserved = getAssessment(asmtId);
+  assert.ok(preserved);
+  assert.equal(preserved.currentRevisionNumber, 1, 'Revision number must not advance on failure');
+  assert.ok(preserved.recentActivity.some(a => a.eventType === 'reassessment_failed'));
+});
+

@@ -55,6 +55,7 @@ export const DEFAULT_SCORING_CONFIG: ScoringWeights = {
 /**
  * Calculates a statistically grounded confidence rating (0-100%)
  * based on concrete evidence breadth, test verification, and commit corroboration.
+ * Never inflates confidence based on stylistic conventions or AI assistance.
  */
 export function calculateGroundedConfidence(evidence: {
   evidenceType?: string;
@@ -63,11 +64,26 @@ export function calculateGroundedConfidence(evidence: {
   commitCount?: number;
   hasDiff?: boolean;
   treeAnalyzed?: boolean;
+  isInsufficientEvidence?: boolean;
 }): number {
-  const { evidenceType, evidenceStrength, hasAssertions, commitCount = 1, hasDiff, treeAnalyzed } = evidence;
+  const {
+    evidenceType,
+    evidenceStrength,
+    hasAssertions,
+    commitCount = 1,
+    hasDiff,
+    treeAnalyzed,
+    isInsufficientEvidence
+  } = evidence;
 
-  // Negative finding confidence: if the tree was analyzed and nothing was found,
-  // confidence in the negative finding is high (85%).
+  // If evidence is insufficient or unavailable (e.g. empty repository or inaccessible file contents),
+  // confidence is intentionally low (25%) because the repository state is inconclusive.
+  if (isInsufficientEvidence) {
+    return 25;
+  }
+
+  // Negative finding confidence: if the tree was actively analyzed and nothing was found,
+  // confidence in the negative finding is high (88%).
   if (evidenceType === 'none' || evidenceStrength === 'none') {
     return treeAnalyzed ? 88 : 75;
   }
@@ -92,7 +108,7 @@ export function calculateGroundedConfidence(evidence: {
       break;
   }
 
-  // Corroboration adjustments
+  // Corroboration adjustments based on verifiable artifacts
   if (hasAssertions) base += 10;
   if (commitCount >= 2) base += 8;
   if (hasDiff) base += 5;
@@ -136,6 +152,13 @@ export function computeScoreForEvidence(
       factors.push('No verifiable implementation discovered (0 pts)');
   }
 
+  // Double-counting safeguard: if evidence overlaps with another requirement without independent proof,
+  // cap base points so identical files/lines cannot inflate multiple requirement scores.
+  if (ev.sharedEvidenceWith && ev.sharedEvidenceWith.length > 0) {
+    basePoints = Math.min(basePoints, config.implementation.weak);
+    factors.push(`Shared evidence with [${ev.sharedEvidenceWith.join(', ')}]: base points adjusted to ${basePoints} to prevent double-counting`);
+  }
+
   // 2. Test verification evaluation
   const assertions = ev.testResultsSummary?.assertionsFound || 0;
   if (assertions > 0) {
@@ -161,9 +184,10 @@ export function computeScoreForEvidence(
     factors.push(`Single commit verification (+${continuityBonus} pts)`);
   }
 
-  // Deduplication check: if duplicate files or duplicate lines repeat identical evidence, do not stack.
   const rawTotal = basePoints + testBonus + continuityBonus;
   const score = Math.min(100, Math.max(0, rawTotal));
+
+  const calculationSummary = `Score: ${score}/100. Breakdown: ${basePoints} base pts (${strength}) + ${testBonus} test pts (${assertions} assertions) + ${continuityBonus} continuity pts (${distinctCommits.length} distinct commits). Rule: ${SCORING_RULE_VERSION}.`;
 
   return {
     score,
@@ -172,7 +196,8 @@ export function computeScoreForEvidence(
     basePoints,
     testBonus,
     continuityBonus,
-    factors
+    factors,
+    calculationSummary
   };
 }
 
@@ -206,7 +231,8 @@ export function rankEvidenceDeterministically(
       hasAssertions: (ev.testResultsSummary?.assertionsFound || 0) > 0,
       commitCount: ev.relevantCommits?.length || (ev.commitSha ? 1 : 0),
       hasDiff: Boolean(ev.additionsOrPatterns && ev.additionsOrPatterns.length > 0),
-      treeAnalyzed: true
+      treeAnalyzed: true,
+      isInsufficientEvidence: ev.isInsufficientEvidence
     });
 
     return {

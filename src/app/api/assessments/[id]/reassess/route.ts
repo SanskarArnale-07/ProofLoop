@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getAssessment, saveRevision, addActivityEvent, recordAssessmentFailure } from '@/lib/db';
-import { fetchRepoTree, fetchRepoCommits } from '@/lib/github';
-import { analyzeRepositoryAgainstRequirements } from '@/lib/analyzer';
+import { evaluateRepositoryCore } from '@/lib/analyzer';
 import { AssessmentRevision, ActivityEvent } from '@/lib/types';
 import { SCORING_RULE_VERSION } from '@/lib/scoring';
 
@@ -19,51 +18,32 @@ export async function POST(
       return NextResponse.json({ error: 'Assessment not found' }, { status: 404 });
     }
 
-    const [owner, repo] = assessment.repository.fullName.split('/');
+    // Run core evidence evaluation engine
+    const coreResult = await evaluateRepositoryCore({
+      assessmentId: assessment.id,
+      repoFullName: assessment.repository.fullName,
+      defaultBranch: assessment.repository.defaultBranch,
+      targetCommitSha: assessment.repository.latestCommitSha,
+      requirements: assessment.internship.requirements,
+      triggerType: 'manual',
+      triggerMessage: 'Manual reassessment request'
+    });
 
-    // 1. Fetch File Tree
-    let fileTree = [];
-    try {
-      fileTree = await fetchRepoTree(owner, repo, assessment.repository.defaultBranch);
-    } catch {
-      fileTree = assessment.latestRevision.evidence
-        .filter(e => e.filePath)
-        .map(e => ({ path: e.filePath!, mode: '100644', type: 'blob' as const, sha: 'curr' }));
-    }
-
-    // 2. Fetch Commits
-    let commits = [];
-    try {
-      commits = await fetchRepoCommits(owner, repo, assessment.repository.defaultBranch, 20);
-    } catch {
-      commits = [
+    if (!coreResult.success) {
+      const errMsg = coreResult.error || 'Reassessment failed';
+      recordAssessmentFailure(assessment.id, errMsg);
+      const statusCode = coreResult.errorCode === 'REPO_NOT_FOUND' ? 404 : 500;
+      return NextResponse.json(
         {
-          sha: assessment.repository.latestCommitSha,
-          message: assessment.latestRevision.commitMessage || 'Manual reassessment',
-          authorName: owner,
-          timestamp: new Date().toISOString(),
-          filesChanged: []
-        }
-      ];
+          error: errMsg,
+          errorCode: coreResult.errorCode,
+          message: 'Reassessment failed. Previous assessment history was preserved.'
+        },
+        { status: statusCode }
+      );
     }
-
-    // 3. Run Analysis
-    const analysis = await analyzeRepositoryAgainstRequirements(
-      {
-        owner,
-        repo,
-        defaultBranch: assessment.repository.defaultBranch,
-        commitSha: assessment.repository.latestCommitSha,
-        fileTree,
-        commits
-      },
-      assessment.internship.requirements
-    );
 
     const newRevNumber = assessment.currentRevisionNumber + 1;
-    const demonstratedCount = analysis.evidenceList.filter(e => e.status === 'demonstrated').length;
-    const partialCount = analysis.evidenceList.filter(e => e.status === 'partial').length;
-    const notDemonstratedCount = analysis.evidenceList.filter(e => e.status === 'not_demonstrated').length;
     const now = new Date().toISOString();
 
     const newRev: AssessmentRevision = {
@@ -73,13 +53,13 @@ export async function POST(
       commitSha: assessment.repository.latestCommitSha,
       commitMessage: 'Manual reassessment request',
       triggerType: 'manual',
-      evidence: analysis.evidenceList,
-      demonstratedCount,
-      partialCount,
-      notDemonstratedCount,
-      scoringRuleVersion: SCORING_RULE_VERSION,
-      analysisScope: analysis.analysisScope,
-      aiSignals: analysis.aiSignals,
+      evidence: coreResult.evidenceList,
+      demonstratedCount: coreResult.summary.demonstratedCount,
+      partialCount: coreResult.summary.partialCount,
+      notDemonstratedCount: coreResult.summary.notDemonstratedCount,
+      scoringRuleVersion: coreResult.summary.scoringRuleVersion || SCORING_RULE_VERSION,
+      analysisScope: coreResult.analysisScope,
+      aiSignals: coreResult.aiSignals,
       createdAt: now
     };
 
@@ -90,7 +70,7 @@ export async function POST(
       assessmentId: assessment.id,
       eventType: 'reassessment_completed',
       title: `Manual Reassessment Completed (Rev #${newRevNumber})`,
-      description: `Re-evaluated ${analysis.evidenceList.length} internship requirements against repository state.`,
+      description: `Re-evaluated ${coreResult.evidenceList.length} internship requirements against repository state.`,
       commitSha: assessment.repository.latestCommitSha,
       timestamp: now
     };

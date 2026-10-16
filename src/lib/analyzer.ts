@@ -6,9 +6,33 @@ import {
   AISignalAnalysisResult,
   CommitInfo
 } from './types';
-import { GitHubFileNode, fetchFileContent } from './github';
-import { rankEvidenceDeterministically } from './scoring';
+import {
+  GitHubFileNode,
+  fetchFileContent,
+  fetchRepoDetails,
+  fetchRepoCommits,
+  fetchRepoTree,
+  parseGitHubRepoUrl
+} from './github';
+import { rankEvidenceDeterministically, SCORING_RULE_VERSION } from './scoring';
 import { analyzeAIAuthorshipSignals, FileCommentContext } from './ai-signals';
+
+export interface EvidenceClaimTracker {
+  claimedFiles: Map<string, { requirementId: string; requirementTitle: string; lineStart: number; lineEnd: number }>;
+  claim: (filePath: string, reqId: string, reqTitle: string, lineStart: number, lineEnd: number) => void;
+  getClaim: (filePath: string) => { requirementId: string; requirementTitle: string; lineStart: number; lineEnd: number } | undefined;
+}
+
+export function createEvidenceClaimTracker(): EvidenceClaimTracker {
+  const claimedFiles = new Map<string, { requirementId: string; requirementTitle: string; lineStart: number; lineEnd: number }>();
+  return {
+    claimedFiles,
+    claim: (filePath: string, reqId: string, reqTitle: string, lineStart: number, lineEnd: number) => {
+      claimedFiles.set(filePath, { requirementId: reqId, requirementTitle: reqTitle, lineStart, lineEnd });
+    },
+    getClaim: (filePath: string) => claimedFiles.get(filePath)
+  };
+}
 
 export interface AnalysisContext {
   owner: string;
@@ -47,6 +71,59 @@ export async function analyzeRepositoryAgainstRequirements(
 
   const repoFullName = `${owner}/${repo}`;
   const filesInspectedCount = Math.min(fileTree.length, 50);
+
+  // If the repository tree is empty, represent this as insufficient evidence rather than failure
+  if (fileTree.length === 0) {
+    const rawEvidenceList: RepositoryEvidence[] = requirements.map(req => ({
+      requirementId: req.id,
+      requirementTitle: req.title,
+      category: req.category,
+      status: 'not_demonstrated' as const,
+      evidenceType: 'none' as const,
+      evidenceStrength: 'none' as const,
+      explanation: `Insufficient repository evidence: Repository ${repoFullName} contains no files on branch ${defaultBranch}. Technical skill evaluation is inconclusive.`,
+      humanReadableExplanation: `Empty repository: No source files available to evaluate ${req.title}.`,
+      repoFullName,
+      commitSha: commitSha || 'empty',
+      confidence: 25,
+      relevantCommits: [],
+      relevantFiles: [],
+      limitations: [`Empty repository on branch ${defaultBranch}; technical skills could not be evaluated.`],
+      missingInformation: ['Requires repository source code and commit history.'],
+      uncertaintyNotes: 'Repository is empty; cannot establish implementation capability from 0 files.',
+      isInsufficientEvidence: true,
+      authorAttribution: { author: commits.length > 0 ? commits[0].authorName : 'Unknown', isDirectAuthor: false, attributionCertainty: 'uncertain' as const }
+    }));
+
+    const rankedEvidence = rankEvidenceDeterministically(rawEvidenceList);
+    const tasks = rankedEvidence.map(ev => {
+      const matchedReq = requirements.find(r => r.id === ev.requirementId) || {
+        id: ev.requirementId,
+        category: 'core' as const,
+        title: ev.requirementTitle,
+        description: ev.explanation,
+        importance: 'required' as const
+      };
+      return createGapTask(matchedReq, ev);
+    });
+
+    const aiSignals = analyzeAIAuthorshipSignals({ commits, fileComments: [], diffs });
+    const analysisScope: AnalysisScope = {
+      commitsAnalyzed: commits.length,
+      totalCommitsChecked: commits.length,
+      filesInspected: 0,
+      branch: defaultBranch,
+      truncated: false,
+      scopeDescription: `Inspected 0 files across branch ${defaultBranch} (empty repository). Evaluation inconclusive.`
+    };
+
+    return {
+      evidenceList: rankedEvidence,
+      tasks,
+      analysisScope,
+      aiSignals
+    };
+  }
 
   // Helper to fetch file content safely
   const getFile = async (path: string): Promise<string | null> => {
@@ -102,7 +179,8 @@ export async function analyzeRepositoryAgainstRequirements(
     }
   }
 
-  // 1. Evaluate each requirement to extract concrete evidence
+  // 1. Evaluate each requirement to extract concrete evidence with double-counting tracking
+  const claimTracker = createEvidenceClaimTracker();
   const rawEvidenceList: RepositoryEvidence[] = [];
   for (const req of requirements) {
     const ev = await evaluateRequirement({
@@ -112,7 +190,8 @@ export async function analyzeRepositoryAgainstRequirements(
       getFile,
       repoFullName,
       latestCommitSha: commitSha,
-      diffs
+      diffs,
+      claimTracker
     });
     rawEvidenceList.push(ev);
   }
@@ -168,9 +247,30 @@ async function evaluateRequirement(options: {
   repoFullName: string;
   latestCommitSha: string;
   diffs: Array<{ commitSha: string; filePath: string; commitMessage: string; addedLines: string[] }>;
+  claimTracker?: EvidenceClaimTracker;
 }): Promise<RepositoryEvidence> {
-  const { req, fileTree, commits, getFile, repoFullName, latestCommitSha, diffs } = options;
+  const { req, fileTree, commits, getFile, repoFullName, latestCommitSha, diffs, claimTracker } = options;
   const filePaths = fileTree.map(t => t.path);
+
+  // Helper to register claimed evidence and prevent double-counting across requirements
+  const claimEvidence = (
+    filePath: string,
+    lineStart: number,
+    lineEnd: number
+  ): { sharedWith?: string[]; notes?: string } => {
+    if (!claimTracker) return {};
+    const prior = claimTracker.getClaim(filePath);
+    if (prior && prior.requirementId !== req.id) {
+      if (lineStart <= prior.lineEnd && lineEnd >= prior.lineStart) {
+        return {
+          sharedWith: [prior.requirementId],
+          notes: `Shared implementation: ${filePath} (lines ${lineStart}-${lineEnd}) overlaps with ${prior.requirementTitle}. Anti-double-counting safeguards applied.`
+        };
+      }
+    }
+    claimTracker.claim(filePath, req.id, req.title, lineStart, lineEnd);
+    return {};
+  };
 
   // Identify commits that touched relevant files
   const findRelevantCommits = (matcher: (path: string) => boolean): string[] => {
@@ -243,6 +343,7 @@ async function evaluateRequirement(options: {
           const start = Math.max(1, matchedLine - 2);
           const end = Math.min(lines.length, matchedLine + 15);
           const excerpt = lines.slice(start - 1, end).join('\n');
+          const claimInfo = claimEvidence(candidate, start, end);
 
           return {
             requirementId: req.id,
@@ -263,6 +364,8 @@ async function evaluateRequirement(options: {
             relevantCommits,
             relevantFiles: [candidate],
             additionsOrPatterns: [matchedPattern],
+            sharedEvidenceWith: claimInfo.sharedWith,
+            uncertaintyNotes: claimInfo.notes,
             authorAttribution: { author, isDirectAuthor: true, attributionCertainty: 'verified' }
           };
         }
@@ -289,7 +392,7 @@ async function evaluateRequirement(options: {
 
     case 'req-db': {
       const dbMatcher = (p: string) =>
-        /(?:schema\.prisma|migrations?\/|\.sql$|models?\/|database|entities?\/|db\.(ts|js|py))/i.test(p);
+        /(?:schema\.prisma|migrations?\/|\.sql$|models?\/|database|entities?\/|db\/|db\.(ts|js|py))/i.test(p);
       const dbFiles = filePaths.filter(dbMatcher);
       const relevantCommits = findRelevantCommits(dbMatcher);
 
@@ -335,6 +438,7 @@ async function evaluateRequirement(options: {
           const start = Math.max(1, matchedLine - 2);
           const end = Math.min(lines.length, matchedLine + 16);
           const excerpt = lines.slice(start - 1, end).join('\n');
+          const claimInfo = claimEvidence(candidate, start, end);
 
           return {
             requirementId: req.id,
@@ -355,6 +459,8 @@ async function evaluateRequirement(options: {
             relevantCommits,
             relevantFiles: [candidate],
             additionsOrPatterns: [matchedPattern],
+            sharedEvidenceWith: claimInfo.sharedWith,
+            uncertaintyNotes: claimInfo.notes,
             authorAttribution: { author, isDirectAuthor: true, attributionCertainty: 'verified' }
           };
         }
@@ -436,6 +542,7 @@ async function evaluateRequirement(options: {
       }
 
       if (assertionsCount > 0) {
+        const claimInfo = claimEvidence(primaryTestFile, primaryStart, primaryEnd);
         return {
           requirementId: req.id,
           requirementTitle: req.title,
@@ -460,6 +567,8 @@ async function evaluateRequirement(options: {
             verifiedPassing: true,
             executionSummary: 'Verified active test assertions and test runner scripts.'
           },
+          sharedEvidenceWith: claimInfo.sharedWith,
+          uncertaintyNotes: claimInfo.notes,
           authorAttribution: { author, isDirectAuthor: true, attributionCertainty: 'verified' }
         };
       }
@@ -652,9 +761,14 @@ async function evaluateRequirement(options: {
         };
       }
 
-      const sampleFile = tsFiles[0] || tsConfig!;
+      // Prioritize non-test TypeScript source files or tsconfig so test suites are preserved for req-testing
+      const nonTestTsFiles = tsFiles.filter(f => !/(?:tests?\/|\.test\.|\.spec\.)/i.test(f));
+      const candidates = nonTestTsFiles.length > 0 ? nonTestTsFiles : tsFiles;
+      const unclaimedTsFile = candidates.find(f => !claimTracker?.getClaim(f));
+      const sampleFile = tsConfig || unclaimedTsFile || candidates[0] || tsFiles[0];
       const content = await getFile(sampleFile);
       const lines = (content || '').split('\n');
+      const claimInfo = sampleFile === tsConfig ? { sharedWith: undefined, notes: undefined } : claimEvidence(sampleFile, 1, Math.min(lines.length, 16));
 
       return {
         requirementId: req.id,
@@ -675,6 +789,8 @@ async function evaluateRequirement(options: {
         relevantCommits,
         relevantFiles: tsFiles.slice(0, 5),
         additionsOrPatterns: [`${tsFiles.length} TypeScript typed files`],
+        sharedEvidenceWith: claimInfo.sharedWith,
+        uncertaintyNotes: claimInfo.notes,
         authorAttribution: { author, isDirectAuthor: true, attributionCertainty: 'verified' }
       };
     }
@@ -704,9 +820,11 @@ async function evaluateRequirement(options: {
         };
       }
 
-      const sample = feFiles[0];
+      const unclaimedFeFile = feFiles.find(f => !claimTracker?.getClaim(f));
+      const sample = unclaimedFeFile || feFiles[0];
       const content = await getFile(sample);
       const lines = (content || '').split('\n');
+      const claimInfo = claimEvidence(sample, 1, Math.min(lines.length, 18));
 
       return {
         requirementId: req.id,
@@ -726,6 +844,8 @@ async function evaluateRequirement(options: {
         confidence: 90,
         relevantCommits,
         relevantFiles: feFiles.slice(0, 5),
+        sharedEvidenceWith: claimInfo.sharedWith,
+        uncertaintyNotes: claimInfo.notes,
         authorAttribution: { author, isDirectAuthor: true, attributionCertainty: 'verified' }
       };
     }
@@ -786,9 +906,11 @@ async function evaluateRequirement(options: {
       const matchedFiles = filePaths.filter(p => titleTerms.some(term => p.toLowerCase().includes(term)));
 
       if (matchedFiles.length > 0) {
-        const sample = matchedFiles[0];
+        const unclaimed = matchedFiles.find(f => !claimTracker?.getClaim(f));
+        const sample = unclaimed || matchedFiles[0];
         const content = await getFile(sample);
         const lines = (content || '').split('\n');
+        const claimInfo = claimEvidence(sample, 1, Math.min(lines.length, 15));
 
         return {
           requirementId: req.id,
@@ -808,6 +930,8 @@ async function evaluateRequirement(options: {
           confidence: 70,
           relevantCommits: [latestCommitSha],
           relevantFiles: [sample],
+          sharedEvidenceWith: claimInfo.sharedWith,
+          uncertaintyNotes: claimInfo.notes,
           authorAttribution: { author, isDirectAuthor: true, attributionCertainty: 'probable' }
         };
       }
@@ -976,4 +1100,254 @@ function createGapTask(req: InternshipRequirement, evidence?: RepositoryEvidence
     },
     status: 'pending'
   };
+}
+
+export interface CoreEvaluationInput {
+  assessmentId?: string;
+  repoFullName: string;
+  defaultBranch?: string;
+  targetCommitSha?: string;
+  requirements: InternshipRequirement[];
+  triggerType?: 'initial' | 'manual' | 'webhook';
+  triggerMessage?: string;
+  token?: string;
+  fileTree?: GitHubFileNode[];
+  commits?: CommitInfo[];
+  localFileCache?: Record<string, string>;
+  diffs?: Array<{ commitSha: string; filePath: string; commitMessage: string; addedLines: string[] }>;
+}
+
+export interface CoreEvaluationResult {
+  success: boolean;
+  evidenceList: RepositoryEvidence[];
+  tasks: GapTask[];
+  analysisScope: AnalysisScope;
+  aiSignals: AISignalAnalysisResult;
+  summary: {
+    demonstratedCount: number;
+    partialCount: number;
+    notDemonstratedCount: number;
+    averageScore: number;
+    scoringRuleVersion: string;
+  };
+  error?: string;
+  errorCode?: 'REPO_NOT_FOUND' | 'EMPTY_REPO' | 'RATE_LIMITED' | 'ANALYSIS_FAILED' | 'INVALID_INPUT';
+  partialFailures?: string[];
+}
+
+function createEmptyScope(branch: string): AnalysisScope {
+  return {
+    commitsAnalyzed: 0,
+    totalCommitsChecked: 0,
+    filesInspected: 0,
+    branch,
+    truncated: false,
+    scopeDescription: 'No files analyzed.'
+  };
+}
+
+function createEmptyAISignals(): AISignalAnalysisResult {
+  return {
+    overallAssessment: 'insufficient_evidence',
+    findings: [],
+    summary: 'No artifacts available for AI signal analysis.',
+    limitationNotice: 'No repository files available.',
+    analyzedArtifactsCount: { commits: 0, comments: 0, docFiles: 0 }
+  };
+}
+
+function createEmptySummary() {
+  return {
+    demonstratedCount: 0,
+    partialCount: 0,
+    notDemonstratedCount: 0,
+    averageScore: 0,
+    scoringRuleVersion: SCORING_RULE_VERSION
+  };
+}
+
+/**
+ * Reusable Core Evaluation Engine function.
+ * Called by initial assessments, manual reassessments, and webhook processing.
+ * Deterministic, evidence-based, and resilient to empty/missing repositories.
+ */
+export async function evaluateRepositoryCore(
+  input: CoreEvaluationInput
+): Promise<CoreEvaluationResult> {
+  const {
+    repoFullName,
+    defaultBranch: inputBranch,
+    targetCommitSha: inputSha,
+    requirements,
+    token,
+    fileTree: preloadedTree,
+    commits: preloadedCommits,
+    localFileCache,
+    diffs
+  } = input;
+
+  // 1. Validate inputs
+  if (!repoFullName || typeof repoFullName !== 'string') {
+    return {
+      success: false,
+      errorCode: 'INVALID_INPUT',
+      error: 'Repository name is required.',
+      evidenceList: [],
+      tasks: [],
+      analysisScope: createEmptyScope(inputBranch || 'main'),
+      aiSignals: createEmptyAISignals(),
+      summary: createEmptySummary()
+    };
+  }
+
+  if (!requirements || !Array.isArray(requirements) || requirements.length === 0) {
+    return {
+      success: false,
+      errorCode: 'INVALID_INPUT',
+      error: 'Requirements list must be a non-empty array.',
+      evidenceList: [],
+      tasks: [],
+      analysisScope: createEmptyScope(inputBranch || 'main'),
+      aiSignals: createEmptyAISignals(),
+      summary: createEmptySummary()
+    };
+  }
+
+  const parsed = parseGitHubRepoUrl(repoFullName);
+  if (!parsed) {
+    return {
+      success: false,
+      errorCode: 'INVALID_INPUT',
+      error: `Invalid repository URL or format: "${repoFullName}". Expected owner/repo or github.com/owner/repo.`,
+      evidenceList: [],
+      tasks: [],
+      analysisScope: createEmptyScope(inputBranch || 'main'),
+      aiSignals: createEmptyAISignals(),
+      summary: createEmptySummary()
+    };
+  }
+
+  const { owner, repo } = parsed;
+  const partialFailures: string[] = [];
+
+  // 2. Resolve tree and repo details
+  let fileTree: GitHubFileNode[] = preloadedTree || [];
+  let defaultBranch = inputBranch || 'main';
+  let commitSha = inputSha || 'unknown';
+
+  if (!preloadedTree) {
+    try {
+      const details = await fetchRepoDetails(owner, repo, token);
+      defaultBranch = inputBranch || details.defaultBranch || 'main';
+      commitSha = inputSha || details.latestCommitSha || 'unknown';
+      fileTree = await fetchRepoTree(owner, repo, defaultBranch, token);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (/not found|is private|credentials/i.test(msg)) {
+        return {
+          success: false,
+          errorCode: 'REPO_NOT_FOUND',
+          error: `Repository ${owner}/${repo} not found or is private without authorized credentials.`,
+          evidenceList: [],
+          tasks: [],
+          analysisScope: createEmptyScope(defaultBranch),
+          aiSignals: createEmptyAISignals(),
+          summary: createEmptySummary()
+        };
+      }
+      if (/rate limit/i.test(msg)) {
+        return {
+          success: false,
+          errorCode: 'RATE_LIMITED',
+          error: `GitHub API rate limit exceeded while analyzing ${owner}/${repo}. Please retry later.`,
+          evidenceList: [],
+          tasks: [],
+          analysisScope: createEmptyScope(defaultBranch),
+          aiSignals: createEmptyAISignals(),
+          summary: createEmptySummary()
+        };
+      }
+      return {
+        success: false,
+        errorCode: 'ANALYSIS_FAILED',
+        error: `Failed to fetch repository metadata for ${owner}/${repo}: ${msg}`,
+        evidenceList: [],
+        tasks: [],
+        analysisScope: createEmptyScope(defaultBranch),
+        aiSignals: createEmptyAISignals(),
+        summary: createEmptySummary()
+      };
+    }
+  }
+
+  // 3. Resolve commits
+  let commits: CommitInfo[] = preloadedCommits || [];
+  if (!preloadedCommits) {
+    try {
+      commits = await fetchRepoCommits(owner, repo, defaultBranch, 25, token);
+    } catch (err) {
+      partialFailures.push(`Commit history could not be retrieved: ${err instanceof Error ? err.message : String(err)}`);
+      commits = [
+        {
+          sha: commitSha,
+          message: input.triggerMessage || 'Latest repository commit',
+          authorName: owner,
+          timestamp: new Date().toISOString(),
+          filesChanged: []
+        }
+      ];
+    }
+  }
+
+  // 4. Run Analysis
+  try {
+    const analysis = await analyzeRepositoryAgainstRequirements(
+      {
+        owner,
+        repo,
+        defaultBranch,
+        commitSha,
+        fileTree,
+        commits,
+        token,
+        localFileCache,
+        diffs
+      },
+      requirements
+    );
+
+    const demonstratedCount = analysis.evidenceList.filter(e => e.status === 'demonstrated').length;
+    const partialCount = analysis.evidenceList.filter(e => e.status === 'partial').length;
+    const notDemonstratedCount = analysis.evidenceList.filter(e => e.status === 'not_demonstrated').length;
+    const totalScore = analysis.evidenceList.reduce((acc, e) => acc + (e.scoreBreakdown?.score || 0), 0);
+    const averageScore = Math.round(totalScore / (analysis.evidenceList.length || 1));
+
+    return {
+      success: true,
+      evidenceList: analysis.evidenceList,
+      tasks: analysis.tasks,
+      analysisScope: analysis.analysisScope,
+      aiSignals: analysis.aiSignals,
+      summary: {
+        demonstratedCount,
+        partialCount,
+        notDemonstratedCount,
+        averageScore,
+        scoringRuleVersion: SCORING_RULE_VERSION
+      },
+      partialFailures: partialFailures.length > 0 ? partialFailures : undefined
+    };
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return {
+      success: false,
+      errorCode: 'ANALYSIS_FAILED',
+      error: `Repository analysis encountered an unexpected error: ${msg}`,
+      evidenceList: [],
+      tasks: [],
+      analysisScope: createEmptyScope(defaultBranch),
+      aiSignals: createEmptyAISignals(),
+      summary: createEmptySummary()
+    };
+  }
 }

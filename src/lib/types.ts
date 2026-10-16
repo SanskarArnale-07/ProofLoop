@@ -77,6 +77,7 @@ export interface DeterministicScoreBreakdown {
   continuityBonus: number;
   factors: string[];
   tieBreakerReason?: string;
+  calculationSummary?: string;
 }
 
 export interface RepositoryEvidence {
@@ -107,6 +108,8 @@ export interface RepositoryEvidence {
   humanReadableExplanation?: string;
   scoreBreakdown?: DeterministicScoreBreakdown;
   authorAttribution?: AuthorAttribution;
+  sharedEvidenceWith?: string[];
+  isInsufficientEvidence?: boolean;
 }
 
 export interface AISignalFinding {
