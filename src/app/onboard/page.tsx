@@ -178,7 +178,7 @@ interface VerifiedRepoDetails {
         })
       });
 
-      let data: any = null;
+      let data: { success?: boolean; assessmentId?: string; error?: string; message?: string } | null = null;
       const text = await res.text();
       try {
         data = text ? JSON.parse(text) : null;

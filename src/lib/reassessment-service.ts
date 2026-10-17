@@ -85,7 +85,7 @@ export async function reassessAssessment(
   // Load the assessment from the database
   let assessment;
   try {
-    assessment = getAssessment(assessmentId);
+    assessment = await getAssessment(assessmentId);
   } catch (err) {
     return {
       success: false,
@@ -211,11 +211,11 @@ async function performReassessment(input: {
   };
 
   try {
-    saveRevision(newRev);
+    await saveRevision(newRev);
   } catch (err) {
     const errMsg = err instanceof Error ? err.message : 'Failed to save revision';
     try {
-      recordAssessmentFailure(assessmentId, errMsg);
+      await recordAssessmentFailure(assessmentId, errMsg);
     } catch {
       // best effort
     }
@@ -264,7 +264,7 @@ async function performReassessment(input: {
   };
 
   try {
-    addActivityEvent(activity);
+    await addActivityEvent(activity);
   } catch {
     // Activity events are non-critical; don't fail reassessment if logging fails
   }

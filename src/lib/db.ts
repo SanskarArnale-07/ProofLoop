@@ -1,6 +1,4 @@
-import { DatabaseSync } from 'node:sqlite';
-import path from 'node:path';
-import fs from 'node:fs';
+import { Pool, PoolClient } from 'pg';
 import {
   Assessment,
   AssessmentRevision,
@@ -16,159 +14,97 @@ import {
 } from './types';
 import { SCORING_RULE_VERSION } from './scoring';
 
-let dbInstance: DatabaseSync | null = null;
+let poolInstance: Pool | null = null;
 
-export function getDatabase(): DatabaseSync {
-  if (dbInstance) {
-    return dbInstance;
+/**
+ * Lazily initializes and returns the reusable PostgreSQL connection pool.
+ * Throws a clear configuration error if DATABASE_URL is not configured.
+ */
+export function getPool(): Pool {
+  if (poolInstance) {
+    return poolInstance;
   }
 
-  let dataDir = path.join(process.cwd(), 'data');
-  if (process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME) {
-    dataDir = path.join('/tmp', 'proofloop-data');
-  } else {
-    try {
-      if (!fs.existsSync(dataDir)) {
-        fs.mkdirSync(dataDir, { recursive: true });
-      }
-    } catch {
-      dataDir = path.join('/tmp', 'proofloop-data');
-    }
+  const connectionString = process.env.DATABASE_URL;
+  if (!connectionString || !connectionString.trim()) {
+    throw new Error(
+      'DATABASE_URL is not configured. Please set the DATABASE_URL environment variable to connect to PostgreSQL / Neon.'
+    );
   }
 
-  if (!fs.existsSync(dataDir)) {
-    fs.mkdirSync(dataDir, { recursive: true });
-  }
+  const isServerless = Boolean(process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME);
+  const isLocalhost = connectionString.includes('localhost') || connectionString.includes('127.0.0.1');
 
-  const dbPath = path.join(dataDir, 'proofloop.db');
-  const db = new DatabaseSync(dbPath);
+  poolInstance = new Pool({
+    connectionString,
+    max: isServerless ? 5 : 10,
+    idleTimeoutMillis: 30000,
+    connectionTimeoutMillis: 5000,
+    ssl: isLocalhost ? false : { rejectUnauthorized: false }
+  });
 
-  // Enable WAL mode, busy timeout, and foreign keys for performance and data safety
-  db.exec(`
-    PRAGMA journal_mode = WAL;
-    PRAGMA busy_timeout = 5000;
-    PRAGMA foreign_keys = ON;
-    PRAGMA busy_timeout = 5000;
+  poolInstance.on('error', (err) => {
+    console.error('Unexpected PostgreSQL pool client error:', err.message);
+  });
 
-    CREATE TABLE IF NOT EXISTS internships (
-      id TEXT PRIMARY KEY,
-      title TEXT NOT NULL,
-      company TEXT NOT NULL,
-      location TEXT,
-      source_url TEXT NOT NULL,
-      raw_text TEXT,
-      requirements_json TEXT NOT NULL,
-      created_at TEXT NOT NULL
-    );
-
-    CREATE TABLE IF NOT EXISTS assessments (
-      id TEXT PRIMARY KEY,
-      internship_id TEXT NOT NULL,
-      repo_full_name TEXT NOT NULL,
-      repo_url TEXT NOT NULL,
-      default_branch TEXT NOT NULL,
-      latest_commit_sha TEXT NOT NULL,
-      current_revision_number INTEGER NOT NULL DEFAULT 1,
-      status TEXT NOT NULL,
-      analysis_scope_json TEXT,
-      ai_signals_json TEXT,
-      created_at TEXT NOT NULL,
-      updated_at TEXT NOT NULL,
-      FOREIGN KEY (internship_id) REFERENCES internships(id) ON DELETE CASCADE
-    );
-
-    CREATE TABLE IF NOT EXISTS revisions (
-      id TEXT PRIMARY KEY,
-      assessment_id TEXT NOT NULL,
-      revision_number INTEGER NOT NULL,
-      commit_sha TEXT NOT NULL,
-      commit_message TEXT NOT NULL,
-      trigger_type TEXT NOT NULL,
-      evidence_json TEXT NOT NULL,
-      demonstrated_count INTEGER NOT NULL,
-      partial_count INTEGER NOT NULL,
-      not_demonstrated_count INTEGER NOT NULL,
-      scoring_rule_version TEXT,
-      analysis_scope_json TEXT,
-      ai_signals_json TEXT,
-      score_breakdown_summary_json TEXT,
-      created_at TEXT NOT NULL,
-      FOREIGN KEY (assessment_id) REFERENCES assessments(id) ON DELETE CASCADE
-    );
-
-    CREATE TABLE IF NOT EXISTS roadmap_tasks (
-      id TEXT PRIMARY KEY,
-      assessment_id TEXT NOT NULL,
-      requirement_id TEXT NOT NULL,
-      task_data_json TEXT NOT NULL,
-      status TEXT NOT NULL,
-      created_at TEXT NOT NULL,
-      FOREIGN KEY (assessment_id) REFERENCES assessments(id) ON DELETE CASCADE
-    );
-
-    CREATE TABLE IF NOT EXISTS activity_events (
-      id TEXT PRIMARY KEY,
-      assessment_id TEXT NOT NULL,
-      event_type TEXT NOT NULL,
-      title TEXT NOT NULL,
-      description TEXT NOT NULL,
-      commit_sha TEXT,
-      commit_message TEXT,
-      affected_skills_json TEXT,
-      timestamp TEXT NOT NULL,
-      FOREIGN KEY (assessment_id) REFERENCES assessments(id) ON DELETE CASCADE
-    );
-
-    CREATE TABLE IF NOT EXISTS webhook_deliveries (
-      id TEXT PRIMARY KEY,
-      delivery_id TEXT UNIQUE,
-      repo_full_name TEXT NOT NULL,
-      event_type TEXT NOT NULL,
-      commit_sha TEXT,
-      commit_message TEXT,
-      author TEXT,
-      files_changed_json TEXT,
-      signature_valid INTEGER NOT NULL,
-      affected_requirements_json TEXT,
-      created_at TEXT NOT NULL
-    );
-  `);
-
-  // Safe idempotent column additions for existing SQLite databases
-  const safeAlterColumn = (table: string, columnDef: string) => {
-    try {
-      db.exec(`ALTER TABLE ${table} ADD COLUMN ${columnDef}`);
-    } catch {
-      // Column already exists or table structure matches
-    }
-  };
-
-  safeAlterColumn('assessments', 'analysis_scope_json TEXT');
-  safeAlterColumn('assessments', 'ai_signals_json TEXT');
-  safeAlterColumn('revisions', 'scoring_rule_version TEXT');
-  safeAlterColumn('revisions', 'analysis_scope_json TEXT');
-  safeAlterColumn('revisions', 'ai_signals_json TEXT');
-  safeAlterColumn('revisions', 'score_breakdown_summary_json TEXT');
-
-  dbInstance = db;
-  return db;
+  return poolInstance;
 }
 
-// Internship operations
-export function saveInternship(internship: InternshipPosting): void {
-  const db = getDatabase();
-  const stmt = db.prepare(`
-    INSERT INTO internships (id, title, company, location, source_url, raw_text, requirements_json, created_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    ON CONFLICT(id) DO UPDATE SET
-      title = excluded.title,
-      company = excluded.company,
-      location = excluded.location,
-      source_url = excluded.source_url,
-      raw_text = excluded.raw_text,
-      requirements_json = excluded.requirements_json
-  `);
-  stmt.run(
+/**
+ * Closes the connection pool. Useful for testing and standalone CLI scripts.
+ */
+export async function closePool(): Promise<void> {
+  if (poolInstance) {
+    await poolInstance.end();
+    poolInstance = null;
+  }
+}
+
+/**
+ * Executes a function within an explicit PostgreSQL transaction on a dedicated client.
+ * Automatically issues BEGIN, COMMIT, or ROLLBACK, and releases the client.
+ */
+export async function withTransaction<T>(
+  fn: (client: PoolClient) => Promise<T>
+): Promise<T> {
+  const pool = getPool();
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const result = await fn(client);
+    await client.query('COMMIT');
+    return result;
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+// ============================================================================
+// Internship Operations
+// ============================================================================
+
+export async function saveInternship(
+  internship: InternshipPosting,
+  client?: PoolClient
+): Promise<void> {
+  const runner = client || getPool();
+  const query = `
+    INSERT INTO internships (
+      id, title, company, location, source_url, raw_text, requirements_json, created_at
+    )
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+    ON CONFLICT (id) DO UPDATE SET
+      title = EXCLUDED.title,
+      company = EXCLUDED.company,
+      location = EXCLUDED.location,
+      source_url = EXCLUDED.source_url,
+      raw_text = EXCLUDED.raw_text,
+      requirements_json = EXCLUDED.requirements_json;
+  `;
+  await runner.query(query, [
     internship.id,
     internship.title,
     internship.company,
@@ -177,56 +113,59 @@ export function saveInternship(internship: InternshipPosting): void {
     internship.rawText || null,
     JSON.stringify(internship.requirements),
     internship.createdAt
-  );
+  ]);
 }
 
-export function getInternship(id: string): InternshipPosting | null {
-  const db = getDatabase();
-  const stmt = db.prepare(`SELECT * FROM internships WHERE id = ?`);
-  const row = stmt.get(id) as Record<string, unknown> | undefined;
+export async function getInternship(
+  id: string,
+  client?: PoolClient
+): Promise<InternshipPosting | null> {
+  const runner = client || getPool();
+  const res = await runner.query('SELECT * FROM internships WHERE id = $1', [id]);
+  const row = res.rows[0];
   if (!row) return null;
 
   return {
-    id: row.id as string,
-    title: row.title as string,
-    company: row.company as string,
-    location: (row.location as string) || undefined,
-    sourceUrl: row.source_url as string,
-    rawText: (row.raw_text as string) || undefined,
-    requirements: JSON.parse(row.requirements_json as string),
-    createdAt: row.created_at as string
+    id: row.id,
+    title: row.title,
+    company: row.company,
+    location: row.location || undefined,
+    sourceUrl: row.source_url,
+    rawText: row.raw_text || undefined,
+    requirements: JSON.parse(row.requirements_json),
+    createdAt: row.created_at
   };
 }
 
-// Assessment operations
-export function saveAssessment(assessment: Assessment): void {
-  const db = getDatabase();
+// ============================================================================
+// Assessment Operations
+// ============================================================================
 
-  db.exec('BEGIN IMMEDIATE');
-  try {
-    saveInternship(assessment.internship);
+export async function saveAssessment(assessment: Assessment): Promise<void> {
+  await withTransaction(async (client) => {
+    await saveInternship(assessment.internship, client);
 
-    const stmt = db.prepare(`
+    const stmt = `
       INSERT INTO assessments (
         id, internship_id, repo_full_name, repo_url, default_branch,
         latest_commit_sha, current_revision_number, status,
         analysis_scope_json, ai_signals_json, created_at, updated_at
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      ON CONFLICT(id) DO UPDATE SET
-        internship_id = excluded.internship_id,
-        repo_full_name = excluded.repo_full_name,
-        repo_url = excluded.repo_url,
-        default_branch = excluded.default_branch,
-        latest_commit_sha = excluded.latest_commit_sha,
-        current_revision_number = excluded.current_revision_number,
-        status = excluded.status,
-        analysis_scope_json = excluded.analysis_scope_json,
-        ai_signals_json = excluded.ai_signals_json,
-        updated_at = excluded.updated_at
-    `);
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+      ON CONFLICT (id) DO UPDATE SET
+        internship_id = EXCLUDED.internship_id,
+        repo_full_name = EXCLUDED.repo_full_name,
+        repo_url = EXCLUDED.repo_url,
+        default_branch = EXCLUDED.default_branch,
+        latest_commit_sha = EXCLUDED.latest_commit_sha,
+        current_revision_number = EXCLUDED.current_revision_number,
+        status = EXCLUDED.status,
+        analysis_scope_json = EXCLUDED.analysis_scope_json,
+        ai_signals_json = EXCLUDED.ai_signals_json,
+        updated_at = EXCLUDED.updated_at;
+    `;
 
-    stmt.run(
+    await client.query(stmt, [
       assessment.id,
       assessment.internship.id,
       assessment.repository.fullName,
@@ -239,29 +178,24 @@ export function saveAssessment(assessment: Assessment): void {
       assessment.aiSignals ? JSON.stringify(assessment.aiSignals) : null,
       assessment.createdAt,
       assessment.updatedAt
-    );
+    ]);
 
     if (assessment.latestRevision) {
-      saveRevisionInternal(db, assessment.latestRevision);
+      await saveRevisionInternal(client, assessment.latestRevision);
     }
 
     if (assessment.tasks && assessment.tasks.length > 0) {
       for (const task of assessment.tasks) {
-        saveRoadmapTaskInternal(db, assessment.id, task);
+        await saveRoadmapTaskInternal(client, assessment.id, task);
       }
     }
 
     if (assessment.recentActivity && assessment.recentActivity.length > 0) {
       for (const act of assessment.recentActivity) {
-        addActivityEventInternal(db, { ...act, assessmentId: assessment.id });
+        await addActivityEventInternal(client, { ...act, assessmentId: assessment.id });
       }
     }
-
-    db.exec('COMMIT');
-  } catch (err) {
-    db.exec('ROLLBACK');
-    throw err;
-  }
+  });
 }
 
 export const MAX_RETAINED_EVALUATIONS_PER_ASSESSMENT = 10;
@@ -272,64 +206,75 @@ export const MAX_RETAINED_EVALUATIONS_PER_ASSESSMENT = 10;
  * Any older evaluations beyond the newest maxRetained are permanently deleted.
  * Must be executed within the active database transaction for atomicity.
  */
-export function enforceEvaluationRetentionInternal(
-  db: DatabaseSync,
+export async function enforceEvaluationRetentionInternal(
+  client: PoolClient | Pool,
   assessmentId: string,
   maxRetained: number = MAX_RETAINED_EVALUATIONS_PER_ASSESSMENT
-): number {
+): Promise<number> {
   if (!assessmentId || maxRetained <= 0) return 0;
 
-  // Retrieve IDs of revisions exceeding the retention threshold for this specific assessment
-  const staleStmt = db.prepare(`
+  const staleRes = await client.query(
+    `
     SELECT id FROM revisions
-    WHERE assessment_id = ?
+    WHERE assessment_id = $1
     ORDER BY revision_number DESC, created_at DESC
-    LIMIT -1 OFFSET ?
-  `);
-  const staleRows = staleStmt.all(assessmentId, maxRetained) as Array<{ id: string }>;
+    OFFSET $2
+    `,
+    [assessmentId, maxRetained]
+  );
 
-  if (staleRows.length === 0) {
+  if (staleRes.rows.length === 0) {
     return 0;
   }
 
-  const deleteStmt = db.prepare(`DELETE FROM revisions WHERE id = ? AND assessment_id = ?`);
-  let deletedCount = 0;
-  for (const row of staleRows) {
-    deleteStmt.run(row.id, assessmentId);
-    deletedCount++;
-  }
+  const ids = staleRes.rows.map((r) => r.id);
+  const deleteRes = await client.query(
+    `DELETE FROM revisions WHERE assessment_id = $1 AND id = ANY($2::text[])`,
+    [assessmentId, ids]
+  );
 
-  return deletedCount;
+  return deleteRes.rowCount || 0;
 }
 
-export function enforceEvaluationRetention(
+export async function enforceEvaluationRetention(
   assessmentId: string,
   maxRetained: number = MAX_RETAINED_EVALUATIONS_PER_ASSESSMENT
-): number {
-  const db = getDatabase();
-  db.exec('BEGIN IMMEDIATE');
-  try {
-    const count = enforceEvaluationRetentionInternal(db, assessmentId, maxRetained);
-    db.exec('COMMIT');
-    return count;
-  } catch (err) {
-    db.exec('ROLLBACK');
-    throw err;
-  }
+): Promise<number> {
+  return withTransaction(async (client) => {
+    return enforceEvaluationRetentionInternal(client, assessmentId, maxRetained);
+  });
 }
 
-function saveRevisionInternal(db: DatabaseSync, rev: AssessmentRevision): void {
-  const stmt = db.prepare(`
-    INSERT OR REPLACE INTO revisions (
+async function saveRevisionInternal(
+  client: PoolClient | Pool,
+  rev: AssessmentRevision
+): Promise<void> {
+  const stmt = `
+    INSERT INTO revisions (
       id, assessment_id, revision_number, commit_sha, commit_message,
       trigger_type, evidence_json, demonstrated_count, partial_count,
       not_demonstrated_count, scoring_rule_version, analysis_scope_json,
       ai_signals_json, score_breakdown_summary_json, created_at
     )
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `);
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+    ON CONFLICT (id) DO UPDATE SET
+      assessment_id = EXCLUDED.assessment_id,
+      revision_number = EXCLUDED.revision_number,
+      commit_sha = EXCLUDED.commit_sha,
+      commit_message = EXCLUDED.commit_message,
+      trigger_type = EXCLUDED.trigger_type,
+      evidence_json = EXCLUDED.evidence_json,
+      demonstrated_count = EXCLUDED.demonstrated_count,
+      partial_count = EXCLUDED.partial_count,
+      not_demonstrated_count = EXCLUDED.not_demonstrated_count,
+      scoring_rule_version = EXCLUDED.scoring_rule_version,
+      analysis_scope_json = EXCLUDED.analysis_scope_json,
+      ai_signals_json = EXCLUDED.ai_signals_json,
+      score_breakdown_summary_json = EXCLUDED.score_breakdown_summary_json,
+      created_at = EXCLUDED.created_at;
+  `;
 
-  stmt.run(
+  await client.query(stmt, [
     rev.id,
     rev.assessmentId,
     rev.revisionNumber,
@@ -345,73 +290,101 @@ function saveRevisionInternal(db: DatabaseSync, rev: AssessmentRevision): void {
     rev.aiSignals ? JSON.stringify(rev.aiSignals) : null,
     rev.scoreBreakdownSummary ? JSON.stringify(rev.scoreBreakdownSummary) : null,
     rev.createdAt
-  );
+  ]);
 
-  const updateStmt = db.prepare(`
+  const updateStmt = `
     UPDATE assessments
-    SET latest_commit_sha = ?, current_revision_number = ?, updated_at = ?
-    WHERE id = ? AND (? >= current_revision_number)
-  `);
-  updateStmt.run(rev.commitSha, rev.revisionNumber, rev.createdAt, rev.assessmentId, rev.revisionNumber);
+    SET latest_commit_sha = $1, current_revision_number = $2, updated_at = $3
+    WHERE id = $4 AND ($5 >= current_revision_number);
+  `;
+  await client.query(updateStmt, [
+    rev.commitSha,
+    rev.revisionNumber,
+    rev.createdAt,
+    rev.assessmentId,
+    rev.revisionNumber
+  ]);
 
   // Enforce evaluation history retention policy: retain only the 10 most recent evaluations atomically
-  enforceEvaluationRetentionInternal(db, rev.assessmentId, MAX_RETAINED_EVALUATIONS_PER_ASSESSMENT);
+  await enforceEvaluationRetentionInternal(client, rev.assessmentId, MAX_RETAINED_EVALUATIONS_PER_ASSESSMENT);
 }
 
-export function hasRevisionForCommit(assessmentId: string, commitSha: string): boolean {
-  const db = getDatabase();
-  const row = db.prepare(`
-    SELECT 1 FROM revisions
-    WHERE assessment_id = ? AND commit_sha = ?
-    LIMIT 1
-  `).get(assessmentId, commitSha);
-  return Boolean(row);
+export async function hasRevisionForCommit(
+  assessmentId: string,
+  commitSha: string
+): Promise<boolean> {
+  const pool = getPool();
+  const res = await pool.query(
+    'SELECT 1 FROM revisions WHERE assessment_id = $1 AND commit_sha = $2 LIMIT 1',
+    [assessmentId, commitSha]
+  );
+  return res.rows.length > 0;
 }
 
-export function saveRevision(rev: AssessmentRevision): void {
-  const db = getDatabase();
-  db.exec('BEGIN IMMEDIATE');
-  try {
-    saveRevisionInternal(db, rev);
-    db.exec('COMMIT');
-  } catch (err) {
-    db.exec('ROLLBACK');
-    throw err;
-  }
+export async function saveRevision(rev: AssessmentRevision): Promise<void> {
+  await withTransaction(async (client) => {
+    await saveRevisionInternal(client, rev);
+  });
 }
 
-function saveRoadmapTaskInternal(db: DatabaseSync, assessmentId: string, task: GapTask): void {
-  const stmt = db.prepare(`
-    INSERT OR REPLACE INTO roadmap_tasks (id, assessment_id, requirement_id, task_data_json, status, created_at)
-    VALUES (?, ?, ?, ?, ?, ?)
-  `);
-  stmt.run(
+async function saveRoadmapTaskInternal(
+  client: PoolClient | Pool,
+  assessmentId: string,
+  task: GapTask
+): Promise<void> {
+  const stmt = `
+    INSERT INTO roadmap_tasks (id, assessment_id, requirement_id, task_data_json, status, created_at)
+    VALUES ($1, $2, $3, $4, $5, $6)
+    ON CONFLICT (id) DO UPDATE SET
+      assessment_id = EXCLUDED.assessment_id,
+      requirement_id = EXCLUDED.requirement_id,
+      task_data_json = EXCLUDED.task_data_json,
+      status = EXCLUDED.status,
+      created_at = EXCLUDED.created_at;
+  `;
+  await client.query(stmt, [
     task.id,
     assessmentId,
     task.requirementId,
     JSON.stringify(task),
     task.status,
     new Date().toISOString()
-  );
+  ]);
 }
 
-export function saveRoadmapTask(assessmentId: string, task: GapTask): void {
-  const db = getDatabase();
-  saveRoadmapTaskInternal(db, assessmentId, task);
+export async function saveRoadmapTask(assessmentId: string, task: GapTask): Promise<void> {
+  const pool = getPool();
+  await saveRoadmapTaskInternal(pool, assessmentId, task);
 }
 
-export function updateRoadmapTaskStatus(taskId: string, status: 'pending' | 'in_progress' | 'verified'): void {
-  const db = getDatabase();
-  const stmt = db.prepare(`UPDATE roadmap_tasks SET status = ? WHERE id = ?`);
-  stmt.run(status, taskId);
+export async function updateRoadmapTaskStatus(
+  taskId: string,
+  status: 'pending' | 'in_progress' | 'verified'
+): Promise<void> {
+  const pool = getPool();
+  await pool.query('UPDATE roadmap_tasks SET status = $1 WHERE id = $2', [status, taskId]);
 }
 
-function addActivityEventInternal(db: DatabaseSync, event: ActivityEvent): void {
-  const stmt = db.prepare(`
-    INSERT OR REPLACE INTO activity_events (id, assessment_id, event_type, title, description, commit_sha, commit_message, affected_skills_json, timestamp)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `);
-  stmt.run(
+async function addActivityEventInternal(
+  client: PoolClient | Pool,
+  event: ActivityEvent
+): Promise<void> {
+  const stmt = `
+    INSERT INTO activity_events (
+      id, assessment_id, event_type, title, description, commit_sha, commit_message, affected_skills_json, timestamp
+    )
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+    ON CONFLICT (id) DO UPDATE SET
+      assessment_id = EXCLUDED.assessment_id,
+      event_type = EXCLUDED.event_type,
+      title = EXCLUDED.title,
+      description = EXCLUDED.description,
+      commit_sha = EXCLUDED.commit_sha,
+      commit_message = EXCLUDED.commit_message,
+      affected_skills_json = EXCLUDED.affected_skills_json,
+      timestamp = EXCLUDED.timestamp;
+  `;
+  await client.query(stmt, [
     event.id,
     event.assessmentId,
     event.eventType,
@@ -421,71 +394,76 @@ function addActivityEventInternal(db: DatabaseSync, event: ActivityEvent): void 
     event.commitMessage || null,
     event.affectedSkills ? JSON.stringify(event.affectedSkills) : null,
     event.timestamp
-  );
+  ]);
 }
 
-export function addActivityEvent(event: ActivityEvent): void {
-  const db = getDatabase();
-  addActivityEventInternal(db, event);
+export async function addActivityEvent(event: ActivityEvent): Promise<void> {
+  const pool = getPool();
+  await addActivityEventInternal(pool, event);
 }
 
 /**
  * Safely preserves the previous assessment revision if an assessment or reassessment fails.
  */
-export function recordAssessmentFailure(assessmentId: string, errorMessage: string): void {
-  const db = getDatabase();
-  db.exec('BEGIN IMMEDIATE');
+export async function recordAssessmentFailure(
+  assessmentId: string,
+  errorMessage: string
+): Promise<void> {
   try {
-    const actStmt = db.prepare(`
-      INSERT OR REPLACE INTO activity_events (id, assessment_id, event_type, title, description, timestamp)
-      VALUES (?, ?, ?, ?, ?, ?)
-    `);
-    actStmt.run(
-      `act-err-${Date.now()}`,
-      assessmentId,
-      'reassessment_failed',
-      'Reassessment Attempt Failed',
-      `Analysis could not be completed: ${errorMessage}. Previous assessment revision preserved without modification.`,
-      new Date().toISOString()
-    );
+    await withTransaction(async (client) => {
+      const actStmt = `
+        INSERT INTO activity_events (id, assessment_id, event_type, title, description, timestamp)
+        VALUES ($1, $2, $3, $4, $5, $6)
+        ON CONFLICT (id) DO UPDATE SET
+          assessment_id = EXCLUDED.assessment_id,
+          event_type = EXCLUDED.event_type,
+          title = EXCLUDED.title,
+          description = EXCLUDED.description,
+          timestamp = EXCLUDED.timestamp;
+      `;
+      await client.query(actStmt, [
+        `act-err-${Date.now()}`,
+        assessmentId,
+        'reassessment_failed',
+        'Reassessment Attempt Failed',
+        `Analysis could not be completed: ${errorMessage}. Previous assessment revision preserved without modification.`,
+        new Date().toISOString()
+      ]);
 
-    // Keep the assessment in 'completed' state if it already has valid revisions,
-    // only update timestamp. If no revisions exist, set to 'failed'.
-    const countStmt = db.prepare(`SELECT COUNT(*) as count FROM revisions WHERE assessment_id = ?`);
-    const countRow = countStmt.get(assessmentId) as { count: number } | undefined;
-    const hasRevisions = (countRow?.count || 0) > 0;
+      const countRes = await client.query(
+        'SELECT COUNT(*)::int as count FROM revisions WHERE assessment_id = $1',
+        [assessmentId]
+      );
+      const hasRevisions = (countRes.rows[0]?.count || 0) > 0;
 
-    const updateStmt = db.prepare(`
-      UPDATE assessments
-      SET status = ?, updated_at = ?
-      WHERE id = ?
-    `);
-    updateStmt.run(hasRevisions ? 'completed' : 'failed', new Date().toISOString(), assessmentId);
-
-    db.exec('COMMIT');
+      await client.query(
+        'UPDATE assessments SET status = $1, updated_at = $2 WHERE id = $3',
+        [hasRevisions ? 'completed' : 'failed', new Date().toISOString(), assessmentId]
+      );
+    });
   } catch (err) {
-    db.exec('ROLLBACK');
     console.error('Failed to record assessment failure:', err);
   }
 }
 
-export function getAssessment(id: string): Assessment | null {
-  const db = getDatabase();
-  const stmt = db.prepare(`SELECT * FROM assessments WHERE id = ?`);
-  const row = stmt.get(id) as Record<string, unknown> | undefined;
+export async function getAssessment(
+  id: string,
+  client?: PoolClient
+): Promise<Assessment | null> {
+  const runner = client || getPool();
+  const res = await runner.query('SELECT * FROM assessments WHERE id = $1', [id]);
+  const row = res.rows[0];
   if (!row) return null;
 
-  const internship = getInternship(row.internship_id as string);
+  const internship = await getInternship(row.internship_id, client);
   if (!internship) return null;
 
   // Get latest revision
-  const revStmt = db.prepare(`
-    SELECT * FROM revisions 
-    WHERE assessment_id = ? 
-    ORDER BY revision_number DESC 
-    LIMIT 1
-  `);
-  const revRow = revStmt.get(id) as Record<string, unknown> | undefined;
+  const revRes = await runner.query(
+    'SELECT * FROM revisions WHERE assessment_id = $1 ORDER BY revision_number DESC LIMIT 1',
+    [id]
+  );
+  const revRow = revRes.rows[0];
 
   let latestRevision: AssessmentRevision;
   if (revRow) {
@@ -495,7 +473,7 @@ export function getAssessment(id: string): Assessment | null {
       id: 'rev-0',
       assessmentId: id,
       revisionNumber: 1,
-      commitSha: row.latest_commit_sha as string,
+      commitSha: row.latest_commit_sha,
       commitMessage: 'Initial inspection',
       triggerType: 'initial',
       evidence: [],
@@ -503,43 +481,42 @@ export function getAssessment(id: string): Assessment | null {
       partialCount: 0,
       notDemonstratedCount: 0,
       scoringRuleVersion: SCORING_RULE_VERSION,
-      createdAt: row.created_at as string
+      createdAt: row.created_at
     };
   }
 
   // Get tasks
-  const tasksStmt = db.prepare(`SELECT task_data_json, status FROM roadmap_tasks WHERE assessment_id = ?`);
-  const taskRows = tasksStmt.all(id) as Array<{ task_data_json: string; status: string }>;
-  const tasks: GapTask[] = taskRows.map(r => {
+  const tasksRes = await runner.query(
+    'SELECT task_data_json, status FROM roadmap_tasks WHERE assessment_id = $1',
+    [id]
+  );
+  const tasks: GapTask[] = tasksRes.rows.map((r) => {
     const task = JSON.parse(r.task_data_json) as GapTask;
     task.status = r.status as 'pending' | 'in_progress' | 'verified';
     return task;
   });
 
   // Get activities
-  const actStmt = db.prepare(`
-    SELECT * FROM activity_events 
-    WHERE assessment_id = ? 
-    ORDER BY timestamp DESC 
-    LIMIT 50
-  `);
-  const actRows = actStmt.all(id) as Array<Record<string, unknown>>;
-  const recentActivity: ActivityEvent[] = actRows.map(r => ({
-    id: r.id as string,
-    assessmentId: r.assessment_id as string,
+  const actRes = await runner.query(
+    'SELECT * FROM activity_events WHERE assessment_id = $1 ORDER BY timestamp DESC LIMIT 50',
+    [id]
+  );
+  const recentActivity: ActivityEvent[] = actRes.rows.map((r) => ({
+    id: r.id,
+    assessmentId: r.assessment_id,
     eventType: r.event_type as ActivityEvent['eventType'],
-    title: r.title as string,
-    description: r.description as string,
-    commitSha: (r.commit_sha as string) || undefined,
-    commitMessage: (r.commit_message as string) || undefined,
-    affectedSkills: r.affected_skills_json ? JSON.parse(r.affected_skills_json as string) : undefined,
-    timestamp: r.timestamp as string
+    title: r.title,
+    description: r.description,
+    commitSha: r.commit_sha || undefined,
+    commitMessage: r.commit_message || undefined,
+    affectedSkills: r.affected_skills_json ? JSON.parse(r.affected_skills_json) : undefined,
+    timestamp: r.timestamp
   }));
 
   let analysisScope: AnalysisScope | undefined;
   if (row.analysis_scope_json) {
     try {
-      analysisScope = JSON.parse(row.analysis_scope_json as string);
+      analysisScope = JSON.parse(row.analysis_scope_json);
     } catch {}
   } else if (latestRevision.analysisScope) {
     analysisScope = latestRevision.analysisScope;
@@ -548,31 +525,31 @@ export function getAssessment(id: string): Assessment | null {
   let aiSignals: AISignalAnalysisResult | undefined;
   if (row.ai_signals_json) {
     try {
-      aiSignals = JSON.parse(row.ai_signals_json as string);
+      aiSignals = JSON.parse(row.ai_signals_json);
     } catch {}
   } else if (latestRevision.aiSignals) {
     aiSignals = latestRevision.aiSignals;
   }
 
   return {
-    id: row.id as string,
+    id: row.id,
     internship,
     repository: {
-      fullName: row.repo_full_name as string,
-      url: row.repo_url as string,
-      defaultBranch: row.default_branch as string,
+      fullName: row.repo_full_name,
+      url: row.repo_url,
+      defaultBranch: row.default_branch,
       isPrivate: false,
-      latestCommitSha: row.latest_commit_sha as string
+      latestCommitSha: row.latest_commit_sha
     },
-    currentRevisionNumber: row.current_revision_number as number,
+    currentRevisionNumber: Number(row.current_revision_number),
     status: row.status as Assessment['status'],
     latestRevision,
     tasks,
     recentActivity,
     analysisScope,
     aiSignals,
-    createdAt: row.created_at as string,
-    updatedAt: row.updated_at as string
+    createdAt: row.created_at,
+    updatedAt: row.updated_at
   };
 }
 
@@ -601,14 +578,14 @@ function mapRevisionRow(row: Record<string, unknown>): AssessmentRevision {
   return {
     id: row.id as string,
     assessmentId: row.assessment_id as string,
-    revisionNumber: row.revision_number as number,
+    revisionNumber: Number(row.revision_number),
     commitSha: row.commit_sha as string,
     commitMessage: row.commit_message as string,
     triggerType: row.trigger_type as 'initial' | 'webhook' | 'manual',
     evidence: JSON.parse(row.evidence_json as string) as RepositoryEvidence[],
-    demonstratedCount: row.demonstrated_count as number,
-    partialCount: row.partial_count as number,
-    notDemonstratedCount: row.not_demonstrated_count as number,
+    demonstratedCount: Number(row.demonstrated_count),
+    partialCount: Number(row.partial_count),
+    notDemonstratedCount: Number(row.not_demonstrated_count),
     scoringRuleVersion: (row.scoring_rule_version as string) || SCORING_RULE_VERSION,
     analysisScope,
     aiSignals,
@@ -617,34 +594,33 @@ function mapRevisionRow(row: Record<string, unknown>): AssessmentRevision {
   };
 }
 
-export function listAssessments(): Assessment[] {
-  const db = getDatabase();
-  const stmt = db.prepare(`SELECT id FROM assessments ORDER BY updated_at DESC`);
-  const rows = stmt.all() as Array<{ id: string }>;
+export async function listAssessments(): Promise<Assessment[]> {
+  const pool = getPool();
+  const res = await pool.query('SELECT id FROM assessments ORDER BY updated_at DESC');
   const results: Assessment[] = [];
 
-  for (const r of rows) {
-    const item = getAssessment(r.id);
+  for (const r of res.rows) {
+    const item = await getAssessment(r.id);
     if (item) results.push(item);
   }
 
   return results;
 }
 
-export function findAssessmentByRepo(repoFullName: string): Assessment | null {
-  const db = getDatabase();
-  const stmt = db.prepare(`
-    SELECT id FROM assessments 
-    WHERE LOWER(repo_full_name) = LOWER(?) 
-    ORDER BY updated_at DESC 
-    LIMIT 1
-  `);
-  const row = stmt.get(repoFullName) as { id: string } | undefined;
+export async function findAssessmentByRepo(repoFullName: string): Promise<Assessment | null> {
+  const pool = getPool();
+  const res = await pool.query(
+    'SELECT id FROM assessments WHERE LOWER(repo_full_name) = LOWER($1) ORDER BY updated_at DESC LIMIT 1',
+    [repoFullName]
+  );
+  const row = res.rows[0];
   if (!row) return null;
   return getAssessment(row.id);
 }
 
-export function calculateOverallEvaluationScore(evidence: RepositoryEvidence[]): { overallScore: number; totalPoints: number } {
+export function calculateOverallEvaluationScore(
+  evidence: RepositoryEvidence[]
+): { overallScore: number; totalPoints: number } {
   if (!evidence || evidence.length === 0) {
     return { overallScore: 0, totalPoints: 0 };
   }
@@ -656,44 +632,43 @@ export function calculateOverallEvaluationScore(evidence: RepositoryEvidence[]):
   return { overallScore, totalPoints };
 }
 
-export function getRevisionHistory(assessmentId: string): AssessmentRevision[] {
-  const db = getDatabase();
-  const stmt = db.prepare(`
-    SELECT * FROM revisions 
-    WHERE assessment_id = ? 
-    ORDER BY revision_number DESC
-  `);
-  const rows = stmt.all(assessmentId) as Array<Record<string, unknown>>;
-  return rows.map(mapRevisionRow);
+export async function getRevisionHistory(assessmentId: string): Promise<AssessmentRevision[]> {
+  const pool = getPool();
+  const res = await pool.query(
+    'SELECT * FROM revisions WHERE assessment_id = $1 ORDER BY revision_number DESC',
+    [assessmentId]
+  );
+  return res.rows.map(mapRevisionRow);
 }
 
-export function getRevisionByNumber(assessmentId: string, revisionNumber: number): AssessmentRevision | null {
-  const db = getDatabase();
-  const stmt = db.prepare(`
-    SELECT * FROM revisions 
-    WHERE assessment_id = ? AND revision_number = ?
-    LIMIT 1
-  `);
-  const row = stmt.get(assessmentId, revisionNumber) as Record<string, unknown> | undefined;
+export async function getRevisionByNumber(
+  assessmentId: string,
+  revisionNumber: number
+): Promise<AssessmentRevision | null> {
+  const pool = getPool();
+  const res = await pool.query(
+    'SELECT * FROM revisions WHERE assessment_id = $1 AND revision_number = $2 LIMIT 1',
+    [assessmentId, revisionNumber]
+  );
+  const row = res.rows[0];
   if (!row) return null;
   return mapRevisionRow(row);
 }
 
-export function getRevisionByIdOrNumber(
+export async function getRevisionByIdOrNumber(
   assessmentId: string,
   identifier: number | string
-): AssessmentRevision | null {
-  const db = getDatabase();
+): Promise<AssessmentRevision | null> {
   if (typeof identifier === 'number' || /^\d+$/.test(String(identifier).trim())) {
     const num = typeof identifier === 'number' ? identifier : parseInt(String(identifier).trim(), 10);
     return getRevisionByNumber(assessmentId, num);
   }
-  const stmt = db.prepare(`
-    SELECT * FROM revisions 
-    WHERE assessment_id = ? AND id = ?
-    LIMIT 1
-  `);
-  const row = stmt.get(assessmentId, String(identifier).trim()) as Record<string, unknown> | undefined;
+  const pool = getPool();
+  const res = await pool.query(
+    'SELECT * FROM revisions WHERE assessment_id = $1 AND id = $2 LIMIT 1',
+    [assessmentId, String(identifier).trim()]
+  );
+  const row = res.rows[0];
   if (!row) return null;
   return mapRevisionRow(row);
 }
@@ -705,35 +680,35 @@ export interface EvaluationHistoryOptions {
   includeEvidence?: boolean;
 }
 
-export function getEvaluationHistory(
+export async function getEvaluationHistory(
   assessmentId: string,
   options: EvaluationHistoryOptions = {}
-): {
+): Promise<{
   evaluations: EvaluationSummary[];
   latestEvaluation: EvaluationSummary | null;
   total: number;
   limit: number;
   offset: number;
   hasMore: boolean;
-} {
-  const db = getDatabase();
+}> {
+  const pool = getPool();
   const order = options.order === 'desc' ? 'DESC' : 'ASC'; // Default: chronological (oldest to newest)
   const limit = Math.max(1, Math.min(100, options.limit ?? 50));
   const offset = Math.max(0, options.offset ?? 0);
 
   // Total count of evaluations for this assessment
-  const countStmt = db.prepare(`SELECT COUNT(*) as count FROM revisions WHERE assessment_id = ?`);
-  const countRow = countStmt.get(assessmentId) as { count: number } | undefined;
-  const total = countRow?.count || 0;
+  const countRes = await pool.query(
+    'SELECT COUNT(*)::int as count FROM revisions WHERE assessment_id = $1',
+    [assessmentId]
+  );
+  const total = countRes.rows[0]?.count || 0;
 
   // Identify latest revision by revision_number DESC
-  const latestStmt = db.prepare(`
-    SELECT * FROM revisions 
-    WHERE assessment_id = ? 
-    ORDER BY revision_number DESC 
-    LIMIT 1
-  `);
-  const latestRow = latestStmt.get(assessmentId) as Record<string, unknown> | undefined;
+  const latestRes = await pool.query(
+    'SELECT * FROM revisions WHERE assessment_id = $1 ORDER BY revision_number DESC LIMIT 1',
+    [assessmentId]
+  );
+  const latestRow = latestRes.rows[0];
   let latestEvaluation: EvaluationSummary | null = null;
   if (latestRow) {
     const rev = mapRevisionRow(latestRow);
@@ -761,14 +736,11 @@ export function getEvaluationHistory(
   }
 
   // Fetch paginated evaluations ordered chronologically (or desc if requested)
-  const stmt = db.prepare(`
-    SELECT * FROM revisions 
-    WHERE assessment_id = ? 
-    ORDER BY revision_number ${order}
-    LIMIT ? OFFSET ?
-  `);
-  const rows = stmt.all(assessmentId, limit, offset) as Array<Record<string, unknown>>;
-  const evaluations: EvaluationSummary[] = rows.map(r => {
+  const rowsRes = await pool.query(
+    `SELECT * FROM revisions WHERE assessment_id = $1 ORDER BY revision_number ${order} LIMIT $2 OFFSET $3`,
+    [assessmentId, limit, offset]
+  );
+  const evaluations: EvaluationSummary[] = rowsRes.rows.map((r) => {
     const rev = mapRevisionRow(r);
     const { overallScore, totalPoints } = calculateOverallEvaluationScore(rev.evidence);
     return {
@@ -807,13 +779,13 @@ export function getEvaluationHistory(
  * Compares two assessment evaluations belonging to the same assessment.
  * Accepts either evaluation revision numbers (1, 2) or stable evaluation IDs (rev-xxx-1).
  */
-export function compareRevisions(
+export async function compareRevisions(
   assessmentId: string,
   fromRevOrId: number | string,
   toRevOrId: number | string
-): RevisionComparison | null {
-  const fromRev = getRevisionByIdOrNumber(assessmentId, fromRevOrId);
-  const toRev = getRevisionByIdOrNumber(assessmentId, toRevOrId);
+): Promise<RevisionComparison | null> {
+  const fromRev = await getRevisionByIdOrNumber(assessmentId, fromRevOrId);
+  const toRev = await getRevisionByIdOrNumber(assessmentId, toRevOrId);
 
   if (!fromRev || !toRev) {
     return null;
@@ -832,8 +804,8 @@ export function compareRevisions(
     delta: toOverall.overallScore - fromOverall.overallScore
   };
 
-  const fromMap = new Map(fromRev.evidence.map(e => [e.requirementId, e]));
-  const toMap = new Map(toRev.evidence.map(e => [e.requirementId, e]));
+  const fromMap = new Map(fromRev.evidence.map((e) => [e.requirementId, e]));
+  const toMap = new Map(toRev.evidence.map((e) => [e.requirementId, e]));
 
   const addedEvidence: RevisionComparison['addedEvidence'] = [];
   const removedEvidence: RevisionComparison['removedEvidence'] = [];
@@ -1063,28 +1035,41 @@ export function compareRevisions(
   };
 }
 
-// Webhook log operations
-export function isWebhookDeliveryDuplicate(deliveryId: string): boolean {
+// ============================================================================
+// Webhook Log Operations
+// ============================================================================
+
+export async function isWebhookDeliveryDuplicate(deliveryId: string): Promise<boolean> {
   if (!deliveryId) return false;
-  const db = getDatabase();
-  const stmt = db.prepare(`SELECT id FROM webhook_deliveries WHERE delivery_id = ?`);
-  const row = stmt.get(deliveryId);
-  return Boolean(row);
+  const pool = getPool();
+  const res = await pool.query('SELECT id FROM webhook_deliveries WHERE delivery_id = $1 LIMIT 1', [deliveryId]);
+  return res.rows.length > 0;
 }
 
-export function recordWebhookDelivery(log: WebhookDeliveryLog): void {
-  const db = getDatabase();
-  const stmt = db.prepare(`
-    INSERT OR REPLACE INTO webhook_deliveries (
+export async function recordWebhookDelivery(log: WebhookDeliveryLog): Promise<void> {
+  const pool = getPool();
+  const stmt = `
+    INSERT INTO webhook_deliveries (
       id, delivery_id, repo_full_name, event_type, commit_sha,
       commit_message, author, files_changed_json, signature_valid,
       affected_requirements_json, created_at
     )
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `);
-  stmt.run(
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+    ON CONFLICT (id) DO UPDATE SET
+      delivery_id = EXCLUDED.delivery_id,
+      repo_full_name = EXCLUDED.repo_full_name,
+      event_type = EXCLUDED.event_type,
+      commit_sha = EXCLUDED.commit_sha,
+      commit_message = EXCLUDED.commit_message,
+      author = EXCLUDED.author,
+      files_changed_json = EXCLUDED.files_changed_json,
+      signature_valid = EXCLUDED.signature_valid,
+      affected_requirements_json = EXCLUDED.affected_requirements_json,
+      created_at = EXCLUDED.created_at;
+  `;
+  await pool.query(stmt, [
     log.id,
-    log.deliveryId,
+    log.deliveryId || null,
     log.repoFullName,
     log.eventType,
     log.commitSha || null,
@@ -1094,19 +1079,17 @@ export function recordWebhookDelivery(log: WebhookDeliveryLog): void {
     log.signatureValid ? 1 : 0,
     JSON.stringify(log.affectedRequirements),
     log.createdAt
-  );
+  ]);
 }
 
-export function listWebhookDeliveries(limit: number = 20): WebhookDeliveryLog[] {
-  const db = getDatabase();
-  const stmt = db.prepare(`
-    SELECT * FROM webhook_deliveries 
-    ORDER BY created_at DESC 
-    LIMIT ?
-  `);
-  const rows = stmt.all(limit) as Array<Record<string, unknown>>;
+export async function listWebhookDeliveries(limit: number = 20): Promise<WebhookDeliveryLog[]> {
+  const pool = getPool();
+  const res = await pool.query(
+    'SELECT * FROM webhook_deliveries ORDER BY created_at DESC LIMIT $1',
+    [limit]
+  );
 
-  return rows.map(r => ({
+  return res.rows.map((r) => ({
     id: r.id as string,
     deliveryId: r.delivery_id as string,
     eventType: r.event_type as string,

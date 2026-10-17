@@ -2,6 +2,14 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createJiti } from 'jiti';
 
+function skipIfNoDb(t) {
+  if (!process.env.DATABASE_URL) {
+    t.skip('PostgreSQL database required: DATABASE_URL is not set.');
+    return true;
+  }
+  return false;
+}
+
 const jiti = createJiti(import.meta.url);
 
 const {
@@ -20,10 +28,13 @@ const {
 
 const { SCORING_RULE_VERSION } = jiti('../src/lib/scoring.ts');
 
-// Seed base sample data
-ensureSampleDataSeeded();
+test.before(async () => {
+  if (process.env.DATABASE_URL) {
+    await ensureSampleDataSeeded();
+  }
+});
 
-function createTestAssessment(id, requirementsCount = 3) {
+async function createTestAssessment(id, requirementsCount = 3) {
   const reqs = [];
   for (let i = 1; i <= requirementsCount; i++) {
     reqs.push({
@@ -80,7 +91,7 @@ function createTestAssessment(id, requirementsCount = 3) {
     }
   };
 
-  saveAssessment(assessment);
+  await saveAssessment(assessment);
   return assessment;
 }
 
@@ -88,9 +99,10 @@ function createTestAssessment(id, requirementsCount = 3) {
 // 1. Assessment with No Previous Evaluations / Empty History
 // ============================================================================
 
-test('Evaluation History: handles non-existent or empty assessments gracefully', () => {
+test('Evaluation History: handles non-existent or empty assessments gracefully', async (t) => {
+  if (skipIfNoDb(t)) return;
   const nonExistentId = `asmt-empty-${Date.now()}`;
-  const history = getEvaluationHistory(nonExistentId);
+  const history = await getEvaluationHistory(nonExistentId);
 
   assert.equal(history.evaluations.length, 0);
   assert.equal(history.latestEvaluation, null);
@@ -102,11 +114,12 @@ test('Evaluation History: handles non-existent or empty assessments gracefully',
 // 2. Single and Multiple Successful Evaluations with Stable IDs
 // ============================================================================
 
-test('Evaluation History: single evaluation returns correct metadata and latest pointer', () => {
+test('Evaluation History: single evaluation returns correct metadata and latest pointer', async (t) => {
+  if (skipIfNoDb(t)) return;
   const asmtId = `asmt-single-${Date.now()}`;
-  createTestAssessment(asmtId, 3);
+  await createTestAssessment(asmtId, 3);
 
-  const history = getEvaluationHistory(asmtId);
+  const history = await getEvaluationHistory(asmtId);
   assert.equal(history.total, 1);
   assert.equal(history.evaluations.length, 1);
   assert.ok(history.latestEvaluation);
@@ -126,12 +139,13 @@ test('Evaluation History: single evaluation returns correct metadata and latest 
   assert.equal(ev.isLatest, true);
 });
 
-test('Evaluation History: multiple evaluations retain stable database IDs and timestamps', () => {
+test('Evaluation History: multiple evaluations retain stable database IDs and timestamps', async (t) => {
+  if (skipIfNoDb(t)) return;
   const asmtId = `asmt-multi-${Date.now()}`;
-  const asmt = createTestAssessment(asmtId, 3);
+  const asmt = await createTestAssessment(asmtId, 3);
 
   // Add revision 2
-  saveRevision({
+  await saveRevision({
     id: `rev-${asmtId}-2`,
     assessmentId: asmtId,
     revisionNumber: 2,
@@ -147,7 +161,7 @@ test('Evaluation History: multiple evaluations retain stable database IDs and ti
   });
 
   // Add revision 3
-  saveRevision({
+  await saveRevision({
     id: `rev-${asmtId}-3`,
     assessmentId: asmtId,
     revisionNumber: 3,
@@ -162,7 +176,7 @@ test('Evaluation History: multiple evaluations retain stable database IDs and ti
     createdAt: new Date('2026-10-14T12:00:00.000Z').toISOString()
   });
 
-  const history = getEvaluationHistory(asmtId);
+  const history = await getEvaluationHistory(asmtId);
   assert.equal(history.total, 3);
   assert.equal(history.evaluations.length, 3);
 
@@ -182,12 +196,13 @@ test('Evaluation History: multiple evaluations retain stable database IDs and ti
 // 3. Chronological Ordering (Oldest to Newest) & Order Option
 // ============================================================================
 
-test('Evaluation History: chronological ordering (oldest to newest by default)', () => {
+test('Evaluation History: chronological ordering (oldest to newest by default)', async (t) => {
+  if (skipIfNoDb(t)) return;
   const asmtId = `asmt-order-${Date.now()}`;
-  const asmt = createTestAssessment(asmtId, 2);
+  const asmt = await createTestAssessment(asmtId, 2);
 
   for (let rev = 2; rev <= 4; rev++) {
-    saveRevision({
+    await saveRevision({
       id: `rev-${asmtId}-${rev}`,
       assessmentId: asmtId,
       revisionNumber: rev,
@@ -204,14 +219,14 @@ test('Evaluation History: chronological ordering (oldest to newest by default)',
   }
 
   // Default: chronological ASC (oldest to newest)
-  const chrono = getEvaluationHistory(asmtId);
+  const chrono = await getEvaluationHistory(asmtId);
   assert.equal(chrono.evaluations[0].revisionNumber, 1);
   assert.equal(chrono.evaluations[1].revisionNumber, 2);
   assert.equal(chrono.evaluations[2].revisionNumber, 3);
   assert.equal(chrono.evaluations[3].revisionNumber, 4);
 
   // Explicit DESC option (newest to oldest)
-  const desc = getEvaluationHistory(asmtId, { order: 'desc' });
+  const desc = await getEvaluationHistory(asmtId, { order: 'desc' });
   assert.equal(desc.evaluations[0].revisionNumber, 4);
   assert.equal(desc.evaluations[1].revisionNumber, 3);
   assert.equal(desc.evaluations[2].revisionNumber, 2);
@@ -222,12 +237,13 @@ test('Evaluation History: chronological ordering (oldest to newest by default)',
 // 4. Pagination
 // ============================================================================
 
-test('Evaluation History: pagination parameters limit and offset', () => {
+test('Evaluation History: pagination parameters limit and offset', async (t) => {
+  if (skipIfNoDb(t)) return;
   const asmtId = `asmt-page-${Date.now()}`;
-  const asmt = createTestAssessment(asmtId, 2);
+  const asmt = await createTestAssessment(asmtId, 2);
 
   for (let rev = 2; rev <= 5; rev++) {
-    saveRevision({
+    await saveRevision({
       id: `rev-${asmtId}-${rev}`,
       assessmentId: asmtId,
       revisionNumber: rev,
@@ -244,7 +260,7 @@ test('Evaluation History: pagination parameters limit and offset', () => {
   }
 
   // Page 1 (limit 2, offset 0)
-  const page1 = getEvaluationHistory(asmtId, { limit: 2, offset: 0 });
+  const page1 = await getEvaluationHistory(asmtId, { limit: 2, offset: 0 });
   assert.equal(page1.evaluations.length, 2);
   assert.equal(page1.total, 5);
   assert.equal(page1.hasMore, true);
@@ -252,14 +268,14 @@ test('Evaluation History: pagination parameters limit and offset', () => {
   assert.equal(page1.evaluations[1].revisionNumber, 2);
 
   // Page 2 (limit 2, offset 2)
-  const page2 = getEvaluationHistory(asmtId, { limit: 2, offset: 2 });
+  const page2 = await getEvaluationHistory(asmtId, { limit: 2, offset: 2 });
   assert.equal(page2.evaluations.length, 2);
   assert.equal(page2.hasMore, true);
   assert.equal(page2.evaluations[0].revisionNumber, 3);
   assert.equal(page2.evaluations[1].revisionNumber, 4);
 
   // Page 3 (limit 2, offset 4)
-  const page3 = getEvaluationHistory(asmtId, { limit: 2, offset: 4 });
+  const page3 = await getEvaluationHistory(asmtId, { limit: 2, offset: 4 });
   assert.equal(page3.evaluations.length, 1);
   assert.equal(page3.hasMore, false);
   assert.equal(page3.evaluations[0].revisionNumber, 5);
@@ -269,12 +285,13 @@ test('Evaluation History: pagination parameters limit and offset', () => {
 // 5. Evaluation Comparison: Overall Score & Requirement Score Changes
 // ============================================================================
 
-test('Evaluation Comparison: calculates overall score delta and requirement score changes', () => {
+test('Evaluation Comparison: calculates overall score delta and requirement score changes', async (t) => {
+  if (skipIfNoDb(t)) return;
   const asmtId = `asmt-cmp-score-${Date.now()}`;
-  createTestAssessment(asmtId, 2);
+  await createTestAssessment(asmtId, 2);
 
   // Revision 2 with increased evidence scores
-  saveRevision({
+  await saveRevision({
     id: `rev-${asmtId}-2`,
     assessmentId: asmtId,
     revisionNumber: 2,
@@ -318,7 +335,7 @@ test('Evaluation Comparison: calculates overall score delta and requirement scor
     createdAt: new Date().toISOString()
   });
 
-  const comparison = compareRevisions(asmtId, 1, 2);
+  const comparison = await compareRevisions(asmtId, 1, 2);
   assert.ok(comparison);
   assert.equal(comparison.fromRevisionNumber, 1);
   assert.equal(comparison.toRevisionNumber, 2);
@@ -331,11 +348,12 @@ test('Evaluation Comparison: calculates overall score delta and requirement scor
 // 6. Improvements, Regressions, and Unchanged Classification
 // ============================================================================
 
-test('Evaluation Comparison: correctly categorizes improved, regressed, and unchanged requirements', () => {
+test('Evaluation Comparison: correctly categorizes improved, regressed, and unchanged requirements', async (t) => {
+  if (skipIfNoDb(t)) return;
   const asmtId = `asmt-cmp-cat-${Date.now()}`;
 
   // Revision 1
-  saveAssessment({
+  await saveAssessment({
     ...SAMPLE_ASSESSMENT,
     id: asmtId,
     latestRevision: {
@@ -373,7 +391,7 @@ test('Evaluation Comparison: correctly categorizes improved, regressed, and unch
   });
 
   // Revision 2
-  saveRevision({
+  await saveRevision({
     id: `rev-${asmtId}-2`,
     assessmentId: asmtId,
     revisionNumber: 2,
@@ -407,7 +425,7 @@ test('Evaluation Comparison: correctly categorizes improved, regressed, and unch
     createdAt: new Date('2026-10-14T11:00:00.000Z').toISOString()
   });
 
-  const comparison = compareRevisions(asmtId, 1, 2);
+  const comparison = await compareRevisions(asmtId, 1, 2);
   assert.ok(comparison);
 
   // Newly demonstrated
@@ -433,11 +451,12 @@ test('Evaluation Comparison: correctly categorizes improved, regressed, and unch
 // 7. Missing Evidence & Older Incomplete Data Explicitly Identified
 // ============================================================================
 
-test('Evaluation Comparison: explicitly flags unavailable data instead of guessing', () => {
+test('Evaluation Comparison: explicitly flags unavailable data instead of guessing', async (t) => {
+  if (skipIfNoDb(t)) return;
   const asmtId = `asmt-cmp-missing-${Date.now()}`;
 
   // Revision 1 without codeExcerpt for requirement 1, and only tracks req-1
-  saveAssessment({
+  await saveAssessment({
     ...SAMPLE_ASSESSMENT,
     id: asmtId,
     latestRevision: {
@@ -464,7 +483,7 @@ test('Evaluation Comparison: explicitly flags unavailable data instead of guessi
   });
 
   // Revision 2 tracks req-old and introduces new req-new
-  saveRevision({
+  await saveRevision({
     id: `rev-${asmtId}-2`,
     assessmentId: asmtId,
     revisionNumber: 2,
@@ -496,7 +515,7 @@ test('Evaluation Comparison: explicitly flags unavailable data instead of guessi
     createdAt: new Date('2026-10-14T11:00:00.000Z').toISOString()
   });
 
-  const comparison = compareRevisions(asmtId, 1, 2);
+  const comparison = await compareRevisions(asmtId, 1, 2);
   assert.ok(comparison);
   assert.ok(Array.isArray(comparison.unavailableData));
   assert.ok(comparison.unavailableData.length > 0, 'Unavailable data array must explicitly list missing points');
@@ -512,11 +531,12 @@ test('Evaluation Comparison: explicitly flags unavailable data instead of guessi
 // 8. Evaluation Comparison by Stable ID as well as Revision Number
 // ============================================================================
 
-test('Evaluation Comparison: accepts both revision numbers and stable database IDs', () => {
+test('Evaluation Comparison: accepts both revision numbers and stable database IDs', async (t) => {
+  if (skipIfNoDb(t)) return;
   const asmtId = `asmt-cmp-ids-${Date.now()}`;
-  const asmt = createTestAssessment(asmtId, 2);
+  const asmt = await createTestAssessment(asmtId, 2);
 
-  saveRevision({
+  await saveRevision({
     id: `rev-${asmtId}-2`,
     assessmentId: asmtId,
     revisionNumber: 2,
@@ -532,11 +552,11 @@ test('Evaluation Comparison: accepts both revision numbers and stable database I
   });
 
   // Compare using revision numbers: (1, 2)
-  const cmpByNumbers = compareRevisions(asmtId, 1, 2);
+  const cmpByNumbers = await compareRevisions(asmtId, 1, 2);
   assert.ok(cmpByNumbers);
 
   // Compare using stable IDs: (`rev-${asmtId}-1`, `rev-${asmtId}-2`)
-  const cmpByIds = compareRevisions(asmtId, `rev-${asmtId}-1`, `rev-${asmtId}-2`);
+  const cmpByIds = await compareRevisions(asmtId, `rev-${asmtId}-1`, `rev-${asmtId}-2`);
   assert.ok(cmpByIds);
   assert.equal(cmpByIds.fromRevisionNumber, 1);
   assert.equal(cmpByIds.toRevisionNumber, 2);
@@ -548,15 +568,16 @@ test('Evaluation Comparison: accepts both revision numbers and stable database I
 // 9. Comparison Isolation: Rejects Cross-Assessment Comparison
 // ============================================================================
 
-test('Evaluation Comparison: rejects comparisons across different assessments', () => {
+test('Evaluation Comparison: rejects comparisons across different assessments', async (t) => {
+  if (skipIfNoDb(t)) return;
   const asmtA = `asmt-cross-A-${Date.now()}`;
   const asmtB = `asmt-cross-B-${Date.now()}`;
 
-  createTestAssessment(asmtA, 2);
-  createTestAssessment(asmtB, 2);
+  await createTestAssessment(asmtA, 2);
+  await createTestAssessment(asmtB, 2);
 
   // Attempting to compare revision from Assessment A with revision from Assessment B under Assessment A scope
-  const invalidCross = compareRevisions(asmtA, `rev-${asmtA}-1`, `rev-${asmtB}-1`);
+  const invalidCross = await compareRevisions(asmtA, `rev-${asmtA}-1`, `rev-${asmtB}-1`);
   assert.equal(invalidCross, null, 'Must reject cross-assessment comparison');
 });
 
@@ -564,22 +585,23 @@ test('Evaluation Comparison: rejects comparisons across different assessments', 
 // 10. Failed Evaluations Do Not Appear in Evaluation History
 // ============================================================================
 
-test('Evaluation History: failed evaluations are recorded in activity events but NOT revisions', () => {
+test('Evaluation History: failed evaluations are recorded in activity events but NOT revisions', async (t) => {
+  if (skipIfNoDb(t)) return;
   const asmtId = `asmt-fail-isolation-${Date.now()}`;
-  createTestAssessment(asmtId, 2);
+  await createTestAssessment(asmtId, 2);
 
-  const initialHistory = getEvaluationHistory(asmtId);
+  const initialHistory = await getEvaluationHistory(asmtId);
   assert.equal(initialHistory.total, 1);
 
   // Record a failure
-  recordAssessmentFailure(asmtId, 'Simulated GitHub 503 Service Unavailable');
+  await recordAssessmentFailure(asmtId, 'Simulated GitHub 503 Service Unavailable');
 
-  const afterFailure = getEvaluationHistory(asmtId);
+  const afterFailure = await getEvaluationHistory(asmtId);
   assert.equal(afterFailure.total, 1, 'Total successful evaluations must remain 1');
   assert.equal(afterFailure.evaluations[0].triggerType, 'initial');
 
   // Verify failure is documented in assessment activity log
-  const asmt = getAssessment(asmtId);
+  const asmt = await getAssessment(asmtId);
   assert.ok(asmt);
   assert.ok(asmt.recentActivity.some(a => a.eventType === 'reassessment_failed'));
 });
@@ -588,13 +610,14 @@ test('Evaluation History: failed evaluations are recorded in activity events but
 // 11. Retention Limit Compatibility (Max 10)
 // ============================================================================
 
-test('Evaluation Retention: enforces max 10 retained successful evaluations atomically', () => {
+test('Evaluation Retention: enforces max 10 retained successful evaluations atomically', async (t) => {
+  if (skipIfNoDb(t)) return;
   const asmtId = `asmt-retention-spec-${Date.now()}`;
-  const asmt = createTestAssessment(asmtId, 2);
+  const asmt = await createTestAssessment(asmtId, 2);
 
   // Add 10 additional revisions (total 11)
   for (let i = 2; i <= 11; i++) {
-    saveRevision({
+    await saveRevision({
       id: `rev-${asmtId}-${i}`,
       assessmentId: asmtId,
       revisionNumber: i,
@@ -610,7 +633,7 @@ test('Evaluation Retention: enforces max 10 retained successful evaluations atom
     });
   }
 
-  const history = getEvaluationHistory(asmtId);
+  const history = await getEvaluationHistory(asmtId);
   assert.equal(history.total, 10, 'Exactly 10 evaluations must be retained');
   assert.equal(history.evaluations.length, 10);
 
@@ -624,11 +647,12 @@ test('Evaluation Retention: enforces max 10 retained successful evaluations atom
 // 12. Secret and Token Exposure Safeguard
 // ============================================================================
 
-test('Evaluation History & Comparison: never exposes secrets, tokens, or private credentials', () => {
+test('Evaluation History & Comparison: never exposes secrets, tokens, or private credentials', async (t) => {
+  if (skipIfNoDb(t)) return;
   const asmtId = `asmt-secrets-${Date.now()}`;
-  createTestAssessment(asmtId, 2);
+  await createTestAssessment(asmtId, 2);
 
-  const history = getEvaluationHistory(asmtId, { includeEvidence: true });
+  const history = await getEvaluationHistory(asmtId, { includeEvidence: true });
   const serializedHistory = JSON.stringify(history);
 
   assert.ok(!serializedHistory.includes('token_ghp_'), 'Must never expose GitHub personal access tokens');

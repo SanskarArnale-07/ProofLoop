@@ -12,7 +12,7 @@ export async function GET(
       return NextResponse.json({ error: 'Assessment ID is required.' }, { status: 400 });
     }
 
-    const assessment = getAssessment(cleanId);
+    const assessment = await getAssessment(cleanId);
     if (!assessment) {
       return NextResponse.json({ error: 'Assessment not found' }, { status: 404 });
     }
@@ -48,7 +48,7 @@ export async function GET(
     const includeEvidence = searchParams.get('includeEvidence') === 'true';
     const includeScoringBreakdown = searchParams.get('includeScoringBreakdown') === 'true';
 
-    const historyResult = getEvaluationHistory(cleanId, {
+    const historyResult = await getEvaluationHistory(cleanId, {
       order,
       limit,
       offset,

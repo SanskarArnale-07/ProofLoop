@@ -11,7 +11,7 @@ export async function POST(
     const { id } = await params;
     assessmentId = id;
 
-    const assessment = getAssessment(id);
+    const assessment = await getAssessment(id);
     if (!assessment) {
       return NextResponse.json({ error: 'Assessment not found' }, { status: 404 });
     }
@@ -43,11 +43,11 @@ export async function POST(
         success: true,
         skipped: true,
         message: result.skipReason || 'Reassessment skipped.',
-        assessment: getAssessment(assessmentId)
+        assessment: await getAssessment(assessmentId)
       });
     }
 
-    const updated = getAssessment(assessmentId);
+    const updated = await getAssessment(assessmentId);
     return NextResponse.json({
       success: true,
       assessment: updated,
@@ -62,7 +62,7 @@ export async function POST(
     if (assessmentId) {
       try {
         const { recordAssessmentFailure } = await import('@/lib/db');
-        recordAssessmentFailure(assessmentId, errMsg);
+        await recordAssessmentFailure(assessmentId, errMsg);
       } catch {
         // best effort
       }

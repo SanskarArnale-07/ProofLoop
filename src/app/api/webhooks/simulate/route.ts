@@ -14,7 +14,7 @@ export async function POST(req: NextRequest) {
       simulateInvalidSignature = false
     } = body;
 
-    const assessment = getAssessment(assessmentId);
+    const assessment = await getAssessment(assessmentId);
     if (!assessment) {
       return NextResponse.json({ error: 'Assessment not found' }, { status: 404 });
     }
@@ -134,7 +134,7 @@ CREATE INDEX idx_idempotency_created ON idempotency_keys (created_at);`;
       secretOverride: secret
     });
 
-    const updatedAssessment = getAssessment(assessmentId);
+    const updatedAssessment = await getAssessment(assessmentId);
 
     return NextResponse.json({
       success: result.success,

@@ -13,7 +13,15 @@ const { SAMPLE_ASSESSMENT } = jiti('../src/lib/sample-data.ts');
 
 const { reassessAssessment } = jiti('../src/lib/reassessment-service.ts');
 
-function seedAssessment(overrides) {
+function skipIfNoDb(t) {
+  if (!process.env.DATABASE_URL) {
+    t.skip('Skipping live database test: DATABASE_URL is not set.');
+    return true;
+  }
+  return false;
+}
+
+async function seedAssessment(overrides) {
   const id = `asmt-reassess-test-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
   const overridesSha = overrides && overrides.commitSha ? overrides.commitSha : null;
   const assessment = {
@@ -30,15 +38,16 @@ function seedAssessment(overrides) {
       ? { ...SAMPLE_ASSESSMENT.repository, ...overrides.repository }
       : SAMPLE_ASSESSMENT.repository
   };
-  saveAssessment(assessment);
+  await saveAssessment(assessment);
   return { id, assessment };
 }
 
 // ============================================================================
 // 1. Successful reassessment creates new revision
 // ============================================================================
-test('reassessment service: successful reassessment creates new revision', async () => {
-  const { id } = seedAssessment();
+test('reassessment service: successful reassessment creates new revision', async (t) => {
+  if (skipIfNoDb(t)) return;
+  const { id } = await seedAssessment();
 
   const result = await reassessAssessment({
     assessmentId: id,
@@ -52,7 +61,7 @@ test('reassessment service: successful reassessment creates new revision', async
   assert.ok(result, 'Result must be returned');
   assert.equal(result.assessmentId, id);
 
-  const updated = getAssessment(id);
+  const updated = await getAssessment(id);
   assert.ok(updated, 'Assessment must still be retrievable');
   assert.equal(updated.id, id);
   assert.ok(updated.currentRevisionNumber >= 1);
@@ -61,8 +70,9 @@ test('reassessment service: successful reassessment creates new revision', async
 // ============================================================================
 // 2. Duplicate trigger - same commit SHA as current revision (webhook)
 // ============================================================================
-test('reassessment service: duplicate webhook trigger skips reassessment', async () => {
-  const { id } = seedAssessment();
+test('reassessment service: duplicate webhook trigger skips reassessment', async (t) => {
+  if (skipIfNoDb(t)) return;
+  const { id } = await seedAssessment();
 
   // Pass the SAME commit SHA as the current revision (9e41b2c from sample)
   const result = await reassessAssessment({
@@ -81,7 +91,8 @@ test('reassessment service: duplicate webhook trigger skips reassessment', async
 // ============================================================================
 // 3. Assessment not found
 // ============================================================================
-test('reassessment service: missing assessment returns error', async () => {
+test('reassessment service: missing assessment returns error', async (t) => {
+  if (skipIfNoDb(t)) return;
   const result = await reassessAssessment({
     assessmentId: 'nonexistent-assessment-id',
     triggerType: 'manual',
@@ -97,8 +108,9 @@ test('reassessment service: missing assessment returns error', async () => {
 // ============================================================================
 // 4. Concurrent reassessment guard
 // ============================================================================
-test('reassessment service: concurrent reassessment returns skipped', async () => {
-  const { id } = seedAssessment();
+test('reassessment service: concurrent reassessment returns skipped', async (t) => {
+  if (skipIfNoDb(t)) return;
+  const { id } = await seedAssessment();
 
   const promise1 = reassessAssessment({
     assessmentId: id,
@@ -127,10 +139,11 @@ test('reassessment service: concurrent reassessment returns skipped', async () =
 // ============================================================================
 // 5. Failure preserves previous revision
 // ============================================================================
-test('reassessment service: failure preserves previous revision', async () => {
-  const { id } = seedAssessment();
+test('reassessment service: failure preserves previous revision', async (t) => {
+  if (skipIfNoDb(t)) return;
+  const { id } = await seedAssessment();
 
-  const initial = getAssessment(id);
+  const initial = await getAssessment(id);
   assert.ok(initial);
   const initialRevNum = initial.currentRevisionNumber;
 
@@ -141,7 +154,7 @@ test('reassessment service: failure preserves previous revision', async () => {
     commitSha: 'sha-failure-test'
   });
 
-  const after = getAssessment(id);
+  const after = await getAssessment(id);
   assert.ok(after, 'Assessment must still exist after reassessment attempt');
 
   if (!result.success) {
@@ -155,8 +168,9 @@ test('reassessment service: failure preserves previous revision', async () => {
 // ============================================================================
 // 6. Webhook trigger type is preserved
 // ============================================================================
-test('reassessment service: webhook trigger type is recorded', async () => {
-  const { id } = seedAssessment();
+test('reassessment service: webhook trigger type is recorded', async (t) => {
+  if (skipIfNoDb(t)) return;
+  const { id } = await seedAssessment();
 
   const result = await reassessAssessment({
     assessmentId: id,
@@ -173,8 +187,9 @@ test('reassessment service: webhook trigger type is recorded', async () => {
 // ============================================================================
 // 7. Manual trigger type works
 // ============================================================================
-test('reassessment service: manual trigger type works', async () => {
-  const { id } = seedAssessment();
+test('reassessment service: manual trigger type works', async (t) => {
+  if (skipIfNoDb(t)) return;
+  const { id } = await seedAssessment();
 
   const result = await reassessAssessment({
     assessmentId: id,

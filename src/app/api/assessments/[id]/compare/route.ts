@@ -12,7 +12,7 @@ export async function GET(
       return NextResponse.json({ error: 'Assessment ID is required.' }, { status: 400 });
     }
 
-    const assessment = getAssessment(cleanId);
+    const assessment = await getAssessment(cleanId);
     if (!assessment) {
       return NextResponse.json({ error: 'Assessment not found' }, { status: 404 });
     }
@@ -46,7 +46,7 @@ export async function GET(
       toParam = parsedNum;
     }
 
-    const comparison = compareRevisions(cleanId, fromParam, toParam);
+    const comparison = await compareRevisions(cleanId, fromParam, toParam);
     if (!comparison) {
       return NextResponse.json(
         { error: `Could not compare evaluations "${fromParam}" and "${toParam}". Check that both evaluation records exist for this assessment.` },

@@ -8,8 +8,8 @@ import { SCORING_RULE_VERSION } from '@/lib/scoring';
 
 export async function GET() {
   try {
-    ensureSampleDataSeeded();
-    const assessments = listAssessments();
+    await ensureSampleDataSeeded();
+    const assessments = await listAssessments();
     return NextResponse.json({ success: true, assessments });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Failed to list assessments';
@@ -177,7 +177,7 @@ export async function POST(req: NextRequest) {
 
     // 5. Save to database
     const tPersist = Date.now();
-    saveAssessment(assessment);
+    await saveAssessment(assessment);
     console.log(`[Assessment Creation] Persisted assessment "${assessmentId}" in ${Date.now() - tPersist}ms. Total request duration: ${Date.now() - startTime}ms`);
 
     return NextResponse.json({

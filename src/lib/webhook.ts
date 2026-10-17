@@ -133,7 +133,7 @@ export async function processPushWebhook(
 
   // 2. Deduplication: only deliveries that finished successfully are recorded,
   // so GitHub's "Redeliver" still works after a failure.
-  if (isWebhookDeliveryDuplicate(deliveryId) || inFlightDeliveries.has(deliveryId)) {
+  if ((await isWebhookDeliveryDuplicate(deliveryId)) || inFlightDeliveries.has(deliveryId)) {
     return {
       success: true,
       status: 'duplicate',
@@ -177,7 +177,7 @@ export async function processPushWebhook(
   }
 
   // Find corresponding assessment in our database
-  const assessment = findAssessmentByRepo(repoFullName);
+  const assessment = await findAssessmentByRepo(repoFullName);
   if (!assessment) {
     return {
       success: true,
@@ -287,12 +287,12 @@ export async function processPushWebhook(
 
   try {
     // Re-fetch latest assessment state from DB in case a previous queued push completed
-    const currentAssessment = getAssessment(assessment.id) || assessment;
+    const currentAssessment = (await getAssessment(assessment.id)) || assessment;
 
     // Check if commit has already been evaluated for this assessment
     if (
       currentAssessment.latestRevision?.commitSha === commitSha ||
-      hasRevisionForCommit(currentAssessment.id, commitSha)
+      (await hasRevisionForCommit(currentAssessment.id, commitSha))
     ) {
       return {
         success: true,
@@ -380,7 +380,7 @@ export async function processPushWebhook(
       createdAt: new Date().toISOString()
     };
 
-    saveRevision(newRevision);
+    await saveRevision(newRevision);
 
     // Record Activity Event
     const activityEvent: ActivityEvent = {
@@ -398,7 +398,7 @@ export async function processPushWebhook(
       affectedSkills: affectedReqs,
       timestamp: new Date().toISOString()
     };
-    addActivityEvent(activityEvent);
+    await addActivityEvent(activityEvent);
 
     // Record Webhook Delivery Log
     const log: WebhookDeliveryLog = {
@@ -414,7 +414,7 @@ export async function processPushWebhook(
       affectedRequirements: affectedReqs,
       createdAt: new Date().toISOString()
     };
-    recordWebhookDelivery(log);
+    await recordWebhookDelivery(log);
 
     return {
       success: true,
@@ -433,7 +433,7 @@ export async function processPushWebhook(
     console.error('Webhook reassessment failed:', errMsg);
 
     // Crucial: preserve previous assessment when new analysis fails
-    recordAssessmentFailure(assessment.id, errMsg);
+    await recordAssessmentFailure(assessment.id, errMsg);
 
     // The delivery is deliberately NOT recorded as processed, so GitHub's
     // "Redeliver" button can retry it.

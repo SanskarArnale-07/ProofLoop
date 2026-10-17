@@ -12,7 +12,7 @@ export async function GET(
       return NextResponse.json({ error: 'Assessment ID is required.' }, { status: 400 });
     }
 
-    const assessment = getAssessment(cleanId);
+    const assessment = await getAssessment(cleanId);
     if (!assessment) {
       return NextResponse.json({ error: 'Assessment not found' }, { status: 404 });
     }
@@ -55,7 +55,7 @@ export async function GET(
       const includeEvidence = searchParams.get('includeEvidence') === 'true';
       const includeScoringBreakdown = searchParams.get('includeScoringBreakdown') === 'true';
 
-      const historyResult = getEvaluationHistory(cleanId, {
+      const historyResult = await getEvaluationHistory(cleanId, {
         order,
         limit,
         offset,
@@ -123,12 +123,12 @@ export async function GET(
 
     // Validate that both evaluations exist
     const fromRev = fromType === 'id' 
-      ? getRevisionByIdOrNumber(cleanId, fromParam)
-      : getRevisionByNumber(cleanId, fromParam as number);
+      ? await getRevisionByIdOrNumber(cleanId, fromParam)
+      : await getRevisionByNumber(cleanId, fromParam as number);
 
     const toRev = toType === 'id'
-      ? getRevisionByIdOrNumber(cleanId, toParam)
-      : getRevisionByNumber(cleanId, toParam as number);
+      ? await getRevisionByIdOrNumber(cleanId, toParam)
+      : await getRevisionByNumber(cleanId, toParam as number);
 
     if (!fromRev || !toRev) {
       return NextResponse.json(
@@ -138,7 +138,7 @@ export async function GET(
     }
 
     // Perform comparison
-    const comparison = compareRevisions(cleanId, fromRev.revisionNumber, toRev.revisionNumber);
+    const comparison = await compareRevisions(cleanId, fromRev.revisionNumber, toRev.revisionNumber);
     if (!comparison) {
       return NextResponse.json(
         { error: `Comparison could not be generated. Missing data or incompatible evaluations.` },

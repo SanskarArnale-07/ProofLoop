@@ -1,6 +1,5 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { DatabaseSync } from 'node:sqlite';
 import { createJiti } from 'jiti';
 
 const jiti = createJiti(import.meta.url);
@@ -35,6 +34,7 @@ const {
   getAssessment,
   saveRevision,
   getRevisionHistory,
+  getEvaluationHistory,
   MAX_RETAINED_EVALUATIONS_PER_ASSESSMENT,
   enforceEvaluationRetention,
   recordWebhookDelivery
@@ -45,8 +45,6 @@ const {
   ensureSampleDataSeeded
 } = jiti('../src/lib/sample-data.ts');
 
-ensureSampleDataSeeded();
-
 const {
   evaluateRepositoryCore,
   analyzeRepositoryAgainstRequirements
@@ -56,41 +54,7 @@ const {
 // Additional helper functions for evidence-based evaluation testing
 // ============================================================================
 
-function createRepositoryEvidence(options: {
-  requirementId: string;
-  requirementTitle: string;
-  status: 'demonstrated' | 'partial' | 'not_demonstrated' | 'insufficient';
-  evidenceType: 'direct_implementation' | 'test_verification' | 'configuration' | 'dependency_usage' | 'documentation' | 'none';
-  evidenceStrength: 'strong' | 'moderate' | 'weak' | 'none';
-  explanation: string;
-  humanReadableExplanation?: string;
-  filePath?: string;
-  lineStart?: number;
-  lineEnd?: number;
-  codeExcerpt?: string;
-  confidence?: number;
-  relevantCommits?: string[];
-  relevantFiles?: string[];
-  additionsOrPatterns?: string[];
-  testResultsSummary?: {
-    testFilesCount: number;
-    assertionsFound: number;
-    verifiedPassing?: boolean;
-    executionSummary?: string;
-  };
-  limitations?: string[];
-  contradictoryEvidence?: string[];
-  missingInformation?: string[];
-  uncertaintyNotes?: string;
-  authorAttribution?: {
-    author: string;
-    isDirectAuthor: boolean;
-    attributionCertainty: 'verified' | 'probable' | 'uncertain' | 'shared';
-    attributionNotes?: string;
-  };
-  sharedEvidenceWith?: string[];
-  isInsufficientEvidence?: boolean;
-}): any {
+function createRepositoryEvidence(options) {
   return {
     requirementId: options.requirementId,
     requirementTitle: options.requirementTitle,
@@ -124,13 +88,7 @@ function createRepositoryEvidence(options: {
   };
 }
 
-function createInternshipRequirement(options: {
-  id: string;
-  title: string;
-  description: string;
-  category: 'core' | 'backend' | 'frontend' | 'database' | 'devops' | 'testing' | 'architecture' | 'general';
-  importance: 'required' | 'preferred';
-}): any {
+function createInternshipRequirement(options) {
   return {
     id: options.id,
     title: options.title,
@@ -141,17 +99,7 @@ function createInternshipRequirement(options: {
   };
 }
 
-function createAnalysisContext(options: {
-  owner: string;
-  repo: string;
-  defaultBranch: string;
-  commitSha: string;
-  fileTree: any[];
-  commits?: any[];
-  token?: string;
-  localFileCache?: Record<string, string>;
-  diffs?: any[];
-}): any {
+function createAnalysisContext(options) {
   return {
     owner: options.owner,
     repo: options.repo,
@@ -173,7 +121,11 @@ function createAnalysisContext(options: {
 // Test 36: Evaluation History and Comparison - Full Implementation Verification
 // ============================================================================
 
-test('36. Evaluation History and Comparison - Full Implementation Verification', async () => {
+test('36. Evaluation History and Comparison - Full Implementation Verification', async (t) => {
+  if (!process.env.DATABASE_URL) {
+    t.skip('Skipping live database test: DATABASE_URL is not set.');
+    return;
+  }
   const requirements = [
     createInternshipRequirement({
       id: 'req-api',
@@ -301,7 +253,7 @@ test('36. Evaluation History and Comparison - Full Implementation Verification',
   assert.ok(enhancedEv1.metadata.stabilityConfirmed, 'Should have stable ID');
 
   // Test evaluation comparison
-  const comparison = compareRevisions('test-history-1', 1, 2);
+  const comparison = await compareRevisions('test-history-1', 1, 2);
   assert.ok(comparison, 'Comparison between revisions 1 and 2 should succeed');
   assert.equal(comparison.fromRevisionNumber, 1, 'From revision should be 1');
   assert.equal(comparison.toRevisionNumber, 2, 'To revision should be 2');
@@ -381,7 +333,7 @@ test('36. Evaluation History and Comparison - Full Implementation Verification',
   assert.equal(invalidHistory.latestEvaluation, null, 'Latest evaluation should be null for non-existent assessment');
 
   // Test invalid comparison parameters
-  const invalidComparison = compareRevisions('non-existent-assessment', 1, 2);
+  const invalidComparison = await compareRevisions('non-existent-assessment', 1, 2);
   assert.equal(invalidComparison, null, 'Comparison should fail for non-existent assessment');
 
   console.log('✅ Evaluation history and comparison tests completed successfully!');

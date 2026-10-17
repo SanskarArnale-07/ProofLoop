@@ -7,9 +7,9 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    ensureSampleDataSeeded();
+    await ensureSampleDataSeeded();
     const { id } = await params;
-    const assessment = getAssessment(id);
+    const assessment = await getAssessment(id);
 
     if (!assessment) {
       return NextResponse.json({ error: 'Assessment not found' }, { status: 404 });

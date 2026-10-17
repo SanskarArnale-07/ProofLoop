@@ -12,7 +12,7 @@ export async function GET(
       return NextResponse.json({ error: 'Assessment ID is required.' }, { status: 400 });
     }
 
-    const assessment = getAssessment(cleanId);
+    const assessment = await getAssessment(cleanId);
     if (!assessment) {
       return NextResponse.json({ error: 'Assessment not found' }, { status: 404 });
     }
@@ -49,7 +49,7 @@ export async function GET(
         toParam = parsedNum;
       }
 
-      const comparison = compareRevisions(cleanId, fromParam, toParam);
+      const comparison = await compareRevisions(cleanId, fromParam, toParam);
       if (!comparison) {
         return NextResponse.json({ error: 'One or both revisions could not be found for comparison' }, { status: 404 });
       }
@@ -87,7 +87,7 @@ export async function GET(
 
     const includeEvidence = searchParams.get('includeEvidence') === 'true';
 
-    const historyResult = getEvaluationHistory(cleanId, {
+    const historyResult = await getEvaluationHistory(cleanId, {
       order,
       limit,
       offset,
@@ -95,7 +95,7 @@ export async function GET(
     });
 
     // Also supply revisions array for backward compatibility with frontend
-    const revisions = getRevisionHistory(cleanId);
+    const revisions = await getRevisionHistory(cleanId);
 
     return NextResponse.json({
       success: true,

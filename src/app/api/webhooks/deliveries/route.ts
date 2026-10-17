@@ -3,7 +3,7 @@ import { listWebhookDeliveries } from '@/lib/db';
 
 export async function GET() {
   try {
-    const logs = listWebhookDeliveries(30);
+    const logs = await listWebhookDeliveries(30);
     return NextResponse.json({ success: true, deliveries: logs });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Failed to list webhook logs';

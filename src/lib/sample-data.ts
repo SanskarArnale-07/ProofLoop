@@ -453,13 +453,13 @@ WIP.`,
   updatedAt: '2026-10-14T10:15:00.000Z'
 };
 
-export function ensureSampleDataSeeded(): void {
+export async function ensureSampleDataSeeded(): Promise<void> {
   try {
-    const existing = getAssessment(SAMPLE_ASSESSMENT.id);
+    const existing = await getAssessment(SAMPLE_ASSESSMENT.id);
     if (!existing) {
-      saveAssessment(SAMPLE_ASSESSMENT);
+      await saveAssessment(SAMPLE_ASSESSMENT);
     }
   } catch (err) {
-    console.warn('Could not seed sample data into SQLite DB:', err);
+    console.warn('Could not seed sample data into PostgreSQL DB:', err instanceof Error ? err.message : err);
   }
 }
