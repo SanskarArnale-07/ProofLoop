@@ -16,12 +16,12 @@ export function RoadmapCard({ task, onSimulatePush }: RoadmapCardProps) {
     <div className="p-6 bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded transition-all">
       <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3 mb-4">
         <div>
-          <div className="flex items-center space-x-2 text-[10px] font-mono uppercase tracking-wider text-zinc-500 mb-1">
+          <div className="flex items-center space-x-2 text-[10px] font-mono uppercase tracking-wider text-zinc-600 dark:text-zinc-400 mb-1">
             <span className="px-1.5 py-0.5 rounded bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 font-semibold text-zinc-700 dark:text-zinc-300">
               Gap: {task.requirementTitle}
             </span>
             <span>•</span>
-            <span className="text-zinc-400">Category: {task.category}</span>
+            <span className="text-zinc-600 dark:text-zinc-400">Category: {task.category}</span>
           </div>
 
           <h3 className="font-editorial text-xl font-bold text-zinc-900 dark:text-zinc-100 tracking-tight">
@@ -55,7 +55,7 @@ export function RoadmapCard({ task, onSimulatePush }: RoadmapCardProps) {
       <div>
         <button
           onClick={() => setExpanded(!expanded)}
-          className="flex items-center space-x-1 text-xs font-mono font-semibold text-zinc-700 dark:text-zinc-300 hover:text-black dark:hover:text-white transition-colors"
+          className="flex items-center space-x-1 text-xs font-mono font-semibold text-zinc-700 dark:text-zinc-300 hover:text-black dark:hover:text-white transition-colors cursor-pointer"
         >
           <span>{expanded ? 'Hide Project Brief' : 'Expand Project Brief & Acceptance Criteria'}</span>
           {expanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
@@ -65,14 +65,14 @@ export function RoadmapCard({ task, onSimulatePush }: RoadmapCardProps) {
           <div className="mt-4 pt-4 border-t border-zinc-200 dark:border-zinc-800 space-y-4 animate-fade-in">
             {/* Acceptance Criteria */}
             <div>
-              <h4 className="text-xs font-mono font-semibold uppercase text-zinc-500 mb-2 flex items-center space-x-1.5">
+              <h4 className="text-xs font-mono font-semibold uppercase text-zinc-600 dark:text-zinc-400 mb-2 flex items-center space-x-1.5">
                 <CheckSquare className="w-3.5 h-3.5" />
                 <span>Acceptance Criteria</span>
               </h4>
               <ul className="space-y-1.5">
                 {task.acceptanceCriteria.map((crit, idx) => (
                   <li key={idx} className="flex items-start space-x-2 text-xs font-sans text-zinc-700 dark:text-zinc-300">
-                    <span className="font-mono text-zinc-400 mt-0.5">•</span>
+                    <span className="font-mono text-zinc-500 mt-0.5">•</span>
                     <span>{crit}</span>
                   </li>
                 ))}
@@ -83,7 +83,7 @@ export function RoadmapCard({ task, onSimulatePush }: RoadmapCardProps) {
             {task.projectBrief && (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
                 <div className="p-3 bg-zinc-100 dark:bg-zinc-900 rounded border border-zinc-200 dark:border-zinc-800 text-xs">
-                  <span className="font-mono uppercase text-[10px] text-zinc-500 block mb-1">
+                  <span className="font-mono uppercase text-[10px] text-zinc-600 dark:text-zinc-400 block mb-1">
                     Suggested Scope & Hints
                   </span>
                   <p className="text-zinc-700 dark:text-zinc-300 font-sans mb-2">
@@ -99,13 +99,13 @@ export function RoadmapCard({ task, onSimulatePush }: RoadmapCardProps) {
                 </div>
 
                 <div className="p-3 bg-zinc-100 dark:bg-zinc-900 rounded border border-zinc-200 dark:border-zinc-800 text-xs">
-                  <span className="font-mono uppercase text-[10px] text-zinc-500 block mb-1">
+                  <span className="font-mono uppercase text-[10px] text-zinc-600 dark:text-zinc-400 block mb-1">
                     Verification Method (ProofLoop Webhook)
                   </span>
                   <p className="text-zinc-700 dark:text-zinc-300 font-sans leading-relaxed">
                     {task.projectBrief.verificationMethod}
                   </p>
-                  <div className="mt-2 text-[11px] font-mono text-zinc-500">
+                  <div className="mt-2 text-[11px] font-mono text-zinc-600 dark:text-zinc-400">
                     Suggested files: {task.suggestedFiles.join(', ')}
                   </div>
                 </div>
@@ -117,11 +117,11 @@ export function RoadmapCard({ task, onSimulatePush }: RoadmapCardProps) {
               <div className="pt-3 flex justify-end">
                 <button
                   onClick={() => onSimulatePush(task)}
-                  className="inline-flex items-center space-x-1.5 px-3 py-1.5 bg-black hover:bg-zinc-800 text-white dark:bg-white dark:hover:bg-zinc-200 dark:text-black text-xs font-mono font-medium rounded transition-colors"
+                  className="inline-flex items-center space-x-1.5 px-3 py-1.5 bg-black hover:bg-zinc-800 text-white dark:bg-white dark:hover:bg-[#f4efe2] dark:text-[#2B211B] text-xs font-mono font-bold rounded transition-colors border border-transparent dark:border-[#d5ccba] cursor-pointer"
                 >
-                  <Sparkles className="w-3.5 h-3.5" />
-                  <span>Simulate Pushing Code for This Task</span>
-                  <ArrowRight className="w-3 h-3" />
+                  <Sparkles className="w-3.5 h-3.5 text-white dark:text-[#2B211B]" />
+                  <span className="text-white dark:text-[#2B211B]">Simulate Pushing Code for This Task</span>
+                  <ArrowRight className="w-3 h-3 text-white dark:text-[#2B211B]" />
                 </button>
               </div>
             )}

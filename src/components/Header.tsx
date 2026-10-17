@@ -45,7 +45,7 @@ export function Header({ assessment, onReassessed, showReassess = false }: Heade
       {isSample && (
         <div className="mb-3 px-3 py-1.5 bg-[#30251F] border border-[#584638] text-[11px] font-mono text-[#BDB0A2] rounded flex items-center justify-between">
           <div className="flex items-center space-x-2">
-            <span className="font-bold uppercase tracking-wider text-[#F5F0E5] px-1.5 py-0.5 bg-[#DD5946] rounded">
+            <span className="font-bold uppercase tracking-wider text-white px-1.5 py-0.5 bg-[#DD5946] rounded">
               Sample Exploration Mode
             </span>
             <span>
@@ -74,7 +74,7 @@ export function Header({ assessment, onReassessed, showReassess = false }: Heade
 
         <div className="flex items-center space-x-3">
           {statusMessage && (
-            <span className="text-xs font-mono text-emerald-600 flex items-center space-x-1 animate-fade-in">
+            <span className="text-xs font-mono text-emerald-400 font-semibold flex items-center space-x-1 animate-fade-in">
               <CheckCircle2 className="w-3.5 h-3.5" />
               <span>{statusMessage}</span>
             </span>

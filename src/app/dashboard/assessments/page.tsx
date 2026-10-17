@@ -56,13 +56,13 @@ function AssessmentsContent() {
         <div className="bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded p-8 space-y-6">
           <div className="flex flex-col md:flex-row md:items-start justify-between gap-4 pb-6 border-b border-zinc-200 dark:border-zinc-800">
             <div>
-              <span className="text-xs font-mono uppercase tracking-widest text-zinc-500 block mb-2">
+              <span className="text-xs font-mono uppercase tracking-widest text-zinc-600 dark:text-zinc-400 font-semibold block mb-2">
                 Official Evidence Report
               </span>
               <h1 className="font-editorial text-3xl sm:text-4xl font-bold tracking-tight text-zinc-900 dark:text-zinc-100">
                 {assessment.internship.title}
               </h1>
-              <div className="flex items-center space-x-3 text-xs font-mono text-zinc-500 mt-2">
+              <div className="flex items-center space-x-3 text-xs font-mono text-zinc-600 dark:text-zinc-400 mt-2">
                 <span>Employer: <strong className="text-zinc-800 dark:text-zinc-200">{assessment.internship.company}</strong></span>
                 <span>•</span>
                 <a

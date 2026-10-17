@@ -51,7 +51,7 @@ export function Navigation({ currentAssessmentId }: NavigationProps) {
         <div className="p-6 border-b border-[#584638]">
           <Link href="/" className="group block">
             <div className="flex items-center space-x-2">
-              <span className="font-mono text-base font-bold tracking-tighter uppercase px-2 py-0.5 bg-[#DD5946] text-[#29251F]">
+              <span className="font-mono text-base font-bold tracking-tighter uppercase px-2 py-0.5 bg-[#DD5946] text-white">
                 PL
               </span>
               <span className="font-editorial text-xl font-bold tracking-tight text-[#F5F0E5] group-hover:opacity-80 transition-opacity">
@@ -68,7 +68,7 @@ export function Navigation({ currentAssessmentId }: NavigationProps) {
         <div className="p-4">
           <Link
             href="/onboard"
-            className="flex items-center justify-center space-x-2 w-full py-2.5 px-3 bg-[#F5F0E5] hover:bg-[#e2dcc9] text-[#29251F] text-xs font-mono font-medium rounded transition-colors shadow-xs"
+            className="flex items-center justify-center space-x-2 w-full py-2.5 px-3 bg-[#F5F0E5] hover:bg-[#e2dcc9] text-[#2B211B] text-xs font-mono font-bold rounded transition-colors shadow-xs"
           >
             <PlusCircle className="w-3.5 h-3.5" />
             <span>New Assessment</span>

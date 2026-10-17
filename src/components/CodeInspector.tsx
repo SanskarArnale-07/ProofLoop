@@ -148,23 +148,23 @@ export function CodeInspector({
   const statusConfig = {
     demonstrated: {
       label: 'DEMONSTRATED',
-      icon: <Check className="w-3 h-3 shrink-0 text-[#426B4D]" />,
-      border: 'border-[#426B4D]/50',
-      text: 'text-[#426B4D]',
-      bg: 'bg-[#426B4D]/10',
+      icon: <Check className="w-3 h-3 shrink-0 text-[#2e5738]" />,
+      border: 'border-[#2e5738]/50',
+      text: 'text-[#2e5738]',
+      bg: 'bg-[#2e5738]/10',
     },
     partial: {
       label: 'PARTIAL EVIDENCE',
-      icon: <Copy className="w-3 h-3 shrink-0 text-[#A86B28]" />,
-      border: 'border-[#A86B28]/50',
-      text: 'text-[#A86B28]',
-      bg: 'bg-[#A86B28]/10',
+      icon: <Copy className="w-3 h-3 shrink-0 text-[#854d0e]" />,
+      border: 'border-[#854d0e]/50',
+      text: 'text-[#854d0e]',
+      bg: 'bg-[#854d0e]/10',
     },
     not_demonstrated: {
       label: 'NOT YET DEMONSTRATED',
-      icon: <X className="w-3 h-3 shrink-0 text-[#716F68]" />,
-      border: 'border-[#716F68]/50',
-      text: 'text-[#716F68]',
+      icon: <X className="w-3 h-3 shrink-0 text-[#4e4b44]" />,
+      border: 'border-[#4e4b44]/50',
+      text: 'text-[#4e4b44]',
       bg: 'bg-transparent',
     },
   }[evidence.status];
@@ -207,7 +207,7 @@ export function CodeInspector({
                   <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-sm border border-[#DD604C]/50 bg-[#DD604C]/12 text-[10px] font-mono font-bold uppercase tracking-wider text-[#DD604C]">
                     EVIDENCE / 01
                   </span>
-                  <span className="text-[10px] font-mono font-bold uppercase tracking-widest text-[#716F68]">
+                  <span className="text-[10px] font-mono font-bold uppercase tracking-widest text-[#4E4B44]">
                     EVIDENCE / CODE INSPECTION
                   </span>
                   <h2
@@ -227,7 +227,7 @@ export function CodeInspector({
                   </span>
                   <button
                     onClick={onClose}
-                    className="p-2 rounded-sm hover:bg-[#D5D8D2] text-[#252522]/60 transition-colors focus-visible:ring-2 focus-visible:ring-[#252522] focus-visible:ring-offset-2 focus-visible:ring-offset-[#F5EFE3]"
+                    className="p-2 rounded-sm hover:bg-[#D5D8D2] text-[#252522]/80 transition-colors focus-visible:ring-2 focus-visible:ring-[#252522] focus-visible:ring-offset-2 focus-visible:ring-offset-[#F5EFE3] cursor-pointer"
                     title="Close inspector (Esc)"
                   >
                     <X className="w-5 h-5" />
@@ -240,7 +240,7 @@ export function CodeInspector({
               {/* Left metadata sidebar */}
               <aside className="flex-none w-[24%] max-w-[300px] border-r border-[#C5B9A5] bg-[#EDE3D2] p-7 overflow-y-auto min-h-0 flex flex-col gap-5">
                 <div>
-                  <p className="text-[10px] font-mono font-bold uppercase tracking-wider text-[#716F68] mb-1">
+                  <p className="text-[10px] font-mono font-bold uppercase tracking-wider text-[#4E4B44] mb-1">
                     File
                   </p>
                   <p className="text-sm font-mono text-[#252522] break-words leading-relaxed" title={evidence.filePath ?? ''}>
@@ -248,7 +248,7 @@ export function CodeInspector({
                   </p>
                 </div>
                 <div className="pt-2 border-t border-[#D5D8D2]">
-                  <p className="text-[10px] font-mono font-bold uppercase tracking-wider text-[#716F68] mb-1">
+                  <p className="text-[10px] font-mono font-bold uppercase tracking-wider text-[#4E4B44] mb-1">
                     Repository
                   </p>
                   <p className="text-sm font-mono text-[#252522] break-words leading-relaxed" title={evidence.repoFullName ?? ''}>
@@ -257,7 +257,7 @@ export function CodeInspector({
                 </div>
                 {evidence.lineStart && (
                   <div className="pt-2 border-t border-[#D5D8D2]">
-                    <p className="text-[10px] font-mono font-bold uppercase tracking-wider text-[#716F68] mb-1">
+                    <p className="text-[10px] font-mono font-bold uppercase tracking-wider text-[#4E4B44] mb-1">
                       Lines
                     </p>
                     <p className="text-sm font-mono text-[#252522]">
@@ -266,7 +266,7 @@ export function CodeInspector({
                   </div>
                 )}
                 <div className="pt-2 border-t border-[#D5D8D2]">
-                  <p className="text-[10px] font-mono font-bold uppercase tracking-wider text-[#716F68] mb-1">
+                  <p className="text-[10px] font-mono font-bold uppercase tracking-wider text-[#4E4B44] mb-1">
                     Commit
                   </p>
                   <p className="text-sm font-mono text-[#252522] truncate" title={evidence.commitSha}>
@@ -275,7 +275,7 @@ export function CodeInspector({
                 </div>
                 {language && (
                   <div className="pt-2 border-t border-[#D5D8D2]">
-                    <p className="text-[10px] font-mono font-bold uppercase tracking-wider text-[#716F68] mb-1">
+                    <p className="text-[10px] font-mono font-bold uppercase tracking-wider text-[#4E4B44] mb-1">
                       Language
                     </p>
                     <p className="text-sm font-mono text-[#252522]">{language}</p>
@@ -287,13 +287,13 @@ export function CodeInspector({
               <main className="flex-1 flex flex-col min-h-0 overflow-hidden bg-[#F5EFE3]">
                 {/* Explanation */}
                 <section className="p-7 border-b border-[#C5B9A5] overflow-y-auto bg-[#F5EFE3]">
-                  <p className="text-[11px] font-mono font-bold uppercase tracking-wider text-[#716F68] mb-2">
+                  <p className="text-[11px] font-mono font-bold uppercase tracking-wider text-[#4E4B44] mb-2">
                     EVIDENCE-LINKED FINDING
                   </p>
-                  <p className="text-sm leading-relaxed text-[#252522]/90 font-sans">
+                  <p className="text-sm leading-relaxed text-[#252522] font-sans">
                     {evidence.explanation}
                   </p>
-                  <p className="mt-3 text-[11px] font-mono text-[#716F68]">
+                  <p className="mt-3 text-[11px] font-mono text-[#4E4B44]">
                     Source: Verified from tree inspection of commit{' '}
                     <span className="font-bold text-[#252522]">{evidence.commitSha.slice(0, 7)}</span>
                     {'. '}
@@ -305,13 +305,13 @@ export function CodeInspector({
                 <div className="flex-1 min-h-0 overflow-hidden flex flex-col">
                   {/* Source metadata bar: toolbar with own background + bottom border */}
                   <div className="flex items-center justify-between px-7 py-3 border-b border-[#C5B9A5] bg-[#D5D8D2] flex-shrink-0">
-                    <div className="flex items-center gap-2 text-xs font-mono text-[#716F68]">
+                    <div className="flex items-center gap-2 text-xs font-mono text-[#4E4B44]">
                       <FileCode className="w-3.5 h-3.5" />
                       <span className="font-semibold text-[#252522] truncate">
                         {evidence.filePath || 'No source file detected'}
                       </span>
                       {evidence.lineStart && (
-                        <span className="text-[#716F68]">
+                        <span className="text-[#4E4B44]">
                           :L{evidence.lineStart}-L{evidence.lineEnd}
                         </span>
                       )}
@@ -370,10 +370,10 @@ export function CodeInspector({
                         <tbody>
                           {lines.map((line, idx) => (
                             <tr key={idx} className="hover:bg-[#d7d8d0]/50 transition-colors">
-                              <td className="pr-5 text-right align-top select-none text-[#716F68] text-[11px] w-9 font-mono bg-[#D9DAD2]">
+                              <td className="pr-5 text-right align-top select-none text-[#4E4B44] text-[11px] w-9 font-mono bg-[#D9DAD2] font-semibold">
                                 {startLine + idx}
                               </td>
-                              <td className="whitespace-pre break-all font-mono text-[12px] leading-relaxed text-[#252522]/95">
+                              <td className="whitespace-pre break-all font-mono text-[12px] leading-relaxed text-[#252522]">
                                 {tokenizeLine(line)}
                               </td>
                             </tr>
@@ -383,7 +383,7 @@ export function CodeInspector({
                     </div>
                     {lines.length === 0 && (
                       <div className="flex flex-col items-center justify-center h-64 text-center rounded-md border border-dashed border-[#C5B9A5] bg-[#EDE3D2]/40">
-                        <p className="text-xs font-mono text-[#716F68]">
+                        <p className="text-xs font-mono text-[#4E4B44]">
                           No code excerpt available. This requirement was not demonstrated in the analyzed repository scope.
                         </p>
                       </div>

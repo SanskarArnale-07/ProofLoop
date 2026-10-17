@@ -1,6 +1,8 @@
 @import "tailwindcss";
 @import "./working-volumes.css";
 
+@custom-variant dark (&:where(.dark, .dark *));
+
 :root {
   --background: #30251F;
   --foreground: #F5F0E5;
@@ -19,8 +21,50 @@
   --scrapbook-paper-border: #C9BEAD;
   --scrapbook-red: #DD5946;
   --scrapbook-red-muted: #e26350;
-  --scrapbook-pencil: #71695E;
+  --scrapbook-pencil: #584638;
   --scrapbook-pencil-light: #BDB0A2;
+  --scrapbook-ink: #2B211B;
+}
+
+/* Button Contrast Baseline & Safety Rules */
+button:where(.bg-white, .bg-zinc-100, .bg-zinc-200, .bg-\[\#F5F0E5\], .bg-\[\#fffdf8\], .bg-\[\#f4efe2\], .bg-\[\#fbf7ee\]),
+.dark button:where(.dark\:bg-white, .dark\:bg-zinc-100, .dark\:bg-zinc-200, .dark\:bg-\[\#F5F0E5\]),
+a:where(.bg-white, .bg-zinc-100, .bg-zinc-200, .bg-\[\#F5F0E5\], .bg-\[\#fffdf8\], .bg-\[\#f4efe2\], .bg-\[\#fbf7ee\]),
+.dark a:where(.dark\:bg-white, .dark\:bg-zinc-100, .dark\:bg-zinc-200, .dark\:bg-\[\#F5F0E5\]) {
+  color: #2B211B;
+}
+
+button:where(.bg-white, .bg-zinc-100, .bg-zinc-200, .bg-\[\#F5F0E5\], .bg-\[\#fffdf8\], .bg-\[\#f4efe2\], .bg-\[\#fbf7ee\]) span,
+button:where(.bg-white, .bg-zinc-100, .bg-zinc-200, .bg-\[\#F5F0E5\], .bg-\[\#fffdf8\], .bg-\[\#f4efe2\], .bg-\[\#fbf7ee\]) svg,
+.dark button:where(.dark\:bg-white, .dark\:bg-zinc-100, .dark\:bg-zinc-200, .dark\:bg-\[\#F5F0E5\]) span,
+.dark button:where(.dark\:bg-white, .dark\:bg-zinc-100, .dark\:bg-zinc-200, .dark\:bg-\[\#F5F0E5\]) svg,
+a:where(.bg-white, .bg-zinc-100, .bg-zinc-200, .bg-\[\#F5F0E5\], .bg-\[\#fffdf8\], .bg-\[\#f4efe2\], .bg-\[\#fbf7ee\]) span,
+a:where(.bg-white, .bg-zinc-100, .bg-zinc-200, .bg-\[\#F5F0E5\], .bg-\[\#fffdf8\], .bg-\[\#f4efe2\], .bg-\[\#fbf7ee\]) svg,
+.dark a:where(.dark\:bg-white, .dark\:bg-zinc-100, .dark\:bg-zinc-200, .dark\:bg-\[\#F5F0E5\]) span,
+.dark a:where(.dark\:bg-white, .dark\:bg-zinc-100, .dark\:bg-zinc-200, .dark\:bg-\[\#F5F0E5\]) svg {
+  color: inherit;
+}
+
+button:where(.bg-black, .bg-zinc-900, .bg-zinc-950, .bg-\[\#30251F\], .bg-\[\#211A16\]),
+.dark button:where(.dark\:bg-black, .dark\:bg-zinc-900, .dark\:bg-zinc-950, .dark\:bg-\[\#30251F\]),
+a:where(.bg-black, .bg-zinc-900, .bg-zinc-950, .bg-\[\#30251F\], .bg-\[\#211A16\]),
+.dark a:where(.dark\:bg-black, .dark\:bg-zinc-900, .dark\:bg-zinc-950, .dark\:bg-\[\#30251F\]) {
+  color: #F5F0E5;
+}
+
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+textarea:focus-visible,
+select:focus-visible {
+  outline: 2px solid #DD5946;
+  outline-offset: 2px;
+}
+
+button:disabled,
+button[disabled] {
+  opacity: 0.65;
+  cursor: not-allowed;
 }
 
 @media (prefers-color-scheme: dark) {

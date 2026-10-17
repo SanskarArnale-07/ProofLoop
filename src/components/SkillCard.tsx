@@ -101,18 +101,18 @@ export function SkillCard({ evidence, onInspect, index = 0 }: SkillCardProps) {
               ? 'border-[#166534]/50 text-[#166534] bg-[#166534]/10'
               : isPartial
                 ? 'border-[#92400e]/50 text-[#92400e] bg-[#92400e]/10'
-                : 'border-[#71717a]/50 text-[#71717a] bg-transparent'
+                : 'border-[#52525b]/60 text-[#52525b] bg-[#52525b]/10'
           }`}
         >
           {isDemonstrated && <CheckCircle className="w-3 h-3 shrink-0 text-[#166534]" />}
           {isPartial && <CircleDashed className="w-3 h-3 shrink-0 text-[#92400e]" />}
-          {isNotDemonstrated && <AlertCircle className="w-3 h-3 shrink-0 text-[#71717a]" />}
+          {isNotDemonstrated && <AlertCircle className="w-3 h-3 shrink-0 text-[#52525b]" />}
           <span>{STATUS_LABELS[evidence.status]}</span>
         </span>
 
         {annotation && (
           <span
-            className="font-handwriting text-xs text-[var(--scrapbook-pencil)] italic opacity-70 select-none mt-[0.25rem] lg:mt-0 shrink-0"
+            className="font-handwriting text-sm text-[#4E473F] font-semibold italic select-none mt-[0.25rem] lg:mt-0 shrink-0"
             aria-hidden="true"
           >
             “{annotation}”
@@ -143,7 +143,7 @@ export function SkillCard({ evidence, onInspect, index = 0 }: SkillCardProps) {
         )}
 
         {/* Explanation */}
-        <p className="mt-2 text-sm leading-relaxed text-zinc-800/90 font-sans">
+        <p className="mt-2 text-sm leading-relaxed text-[#2B211B] font-sans">
           {evidence.explanation}
         </p>
 
@@ -178,10 +178,10 @@ export function SkillCard({ evidence, onInspect, index = 0 }: SkillCardProps) {
           </button>
         ) : (
           <div className="mt-4 rounded-xl border border-dashed p-3 text-left">
-            <p className="text-xs font-mono text-zinc-600 mb-2">
+            <p className="text-xs font-mono text-[#584638] font-medium mb-2">
               No supporting code files found in analyzed scope.
             </p>
-            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-mono font-bold uppercase tracking-wider text-[#DD5946] border border-[#DD5946]/40 bg-[#DD5946]/10">
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-mono font-bold uppercase tracking-wider text-[#B93826] border border-[#B93826]/40 bg-[#B93826]/10">
               Gap Identified
             </span>
           </div>

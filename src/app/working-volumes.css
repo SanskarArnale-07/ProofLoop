@@ -31,12 +31,12 @@
 
     
 
-    button {
+    .working-volumes-root button {
       color: inherit;
       font: inherit;
     }
 
-    button:focus-visible {
+    .working-volumes-root button:focus-visible {
       outline: 1px solid var(--ink);
       outline-offset: 4px;
     }

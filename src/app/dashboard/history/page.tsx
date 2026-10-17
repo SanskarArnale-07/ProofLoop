@@ -94,10 +94,10 @@ function HistoryContent() {
           <div className="flex items-center space-x-2">
             <button
               onClick={() => setViewMode('volumes')}
-              className={`flex items-center space-x-2 px-3 py-1.5 rounded text-xs font-mono transition-colors ${
+              className={`flex items-center space-x-2 px-3 py-1.5 rounded text-xs font-mono transition-colors cursor-pointer ${
                 viewMode === 'volumes'
-                  ? 'bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900 font-bold shadow-xs'
-                  : 'text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100 bg-zinc-100 dark:bg-zinc-900'
+                  ? 'bg-zinc-900 text-white dark:bg-white dark:text-[#2B211B] font-bold shadow-xs border border-transparent dark:border-[#d5ccba]'
+                  : 'text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-white bg-zinc-100 dark:bg-zinc-900'
               }`}
             >
               <BookOpen className="w-3.5 h-3.5" />
@@ -105,10 +105,10 @@ function HistoryContent() {
             </button>
             <button
               onClick={() => setViewMode('list')}
-              className={`flex items-center space-x-2 px-3 py-1.5 rounded text-xs font-mono transition-colors ${
+              className={`flex items-center space-x-2 px-3 py-1.5 rounded text-xs font-mono transition-colors cursor-pointer ${
                 viewMode === 'list'
-                  ? 'bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900 font-bold shadow-xs'
-                  : 'text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100 bg-zinc-100 dark:bg-zinc-900'
+                  ? 'bg-zinc-900 text-white dark:bg-white dark:text-[#2B211B] font-bold shadow-xs border border-transparent dark:border-[#d5ccba]'
+                  : 'text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-white bg-zinc-100 dark:bg-zinc-900'
               }`}
             >
               <Layers className="w-3.5 h-3.5" />
@@ -252,17 +252,17 @@ function HistoryContent() {
                           <span className="font-bold text-zinc-900 dark:text-zinc-100 block">
                             {ev.requirementTitle}
                           </span>
-                          <span className="text-[11px] text-zinc-500 font-sans">
+                          <span className="text-[11px] text-zinc-600 dark:text-zinc-400 font-sans">
                             {ev.filePath ? `${ev.filePath} (:L${ev.lineStart || 1})` : 'Not demonstrated in scope'}
                           </span>
                         </div>
                         <span
                           className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded ${
                             ev.status === 'demonstrated'
-                              ? 'bg-black text-white dark:bg-white dark:text-black'
+                              ? 'bg-black text-white dark:bg-white dark:text-[#2B211B]'
                               : ev.status === 'partial'
                               ? 'border border-zinc-400 text-zinc-800 dark:text-zinc-200'
-                              : 'bg-zinc-200 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400'
+                              : 'bg-zinc-200 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300'
                           }`}
                         >
                           {ev.status.replace('_', ' ')}
@@ -273,7 +273,7 @@ function HistoryContent() {
                 </div>
               </div>
             ) : (
-              <div className="p-8 border border-zinc-200 dark:border-zinc-800 rounded text-center text-zinc-500 font-mono text-xs">
+              <div className="p-8 border border-zinc-200 dark:border-zinc-800 rounded text-center text-zinc-400 font-mono text-xs">
                 Select a revision from the left to view details.
               </div>
             )}

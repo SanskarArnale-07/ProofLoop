@@ -68,7 +68,7 @@ function RoadmapContent() {
       <div className="p-8 max-w-7xl mx-auto w-full space-y-6">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div>
-            <span className="text-xs font-mono uppercase tracking-widest text-zinc-500 block mb-1">
+            <span className="text-xs font-mono uppercase tracking-widest text-zinc-600 dark:text-zinc-400 font-semibold block mb-1">
               Actionable Extension
             </span>
             <h2 className="font-editorial text-3xl font-bold tracking-tight text-zinc-900 dark:text-zinc-100">
@@ -79,7 +79,7 @@ function RoadmapContent() {
             </p>
           </div>
 
-          <div className="font-mono text-xs text-zinc-500 bg-white dark:bg-zinc-950 px-3 py-1.5 border border-zinc-200 dark:border-zinc-800 rounded">
+          <div className="font-mono text-xs text-zinc-600 dark:text-zinc-400 font-medium bg-white dark:bg-zinc-950 px-3 py-1.5 border border-zinc-200 dark:border-zinc-800 rounded">
             <span>{tasks.length} Actionable Tasks</span>
           </div>
         </div>
@@ -97,7 +97,7 @@ function RoadmapContent() {
             <h3 className="font-bold text-sm text-zinc-900 dark:text-zinc-100">
               All Target Requirements Demonstrated
             </h3>
-            <p className="text-zinc-500 font-sans max-w-md mx-auto">
+            <p className="text-zinc-600 dark:text-zinc-400 font-sans max-w-md mx-auto">
               Your repository contains verifiable code evidence for all extracted requirements from this internship posting.
             </p>
           </div>

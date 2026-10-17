@@ -152,13 +152,13 @@ export default function ScrapbookLandingPage() {
 
                 <Link
                   href="/dashboard?id=sample-assessment-stripe"
-                  className="inline-flex items-center justify-center space-x-2 px-5 py-3.5 bg-white hover:bg-[#f4efe2] text-zinc-900 border border-[#d5ccba] font-mono text-xs font-semibold uppercase tracking-wider rounded transition-all shadow-xs"
+                  className="inline-flex items-center justify-center space-x-2 px-5 py-3.5 bg-white hover:bg-[#f4efe2] text-[#2B211B] border border-[#d5ccba] font-mono text-xs font-bold uppercase tracking-wider rounded transition-all shadow-xs"
                 >
                   <span>Explore Sample Mode</span>
-                  <ArrowUpRight className="w-3.5 h-3.5 text-zinc-500" />
+                  <ArrowUpRight className="w-3.5 h-3.5 text-[#2B211B]" />
                 </Link>
 
-                <div className="sm:ml-auto flex items-center space-x-2 text-xs font-mono text-zinc-500">
+                <div className="sm:ml-auto flex items-center space-x-2 text-xs font-mono text-zinc-600">
                   <span className="w-2 h-2 rounded-full bg-emerald-500" />
                   <span>Verified Reassessment Engine</span>
                 </div>
@@ -1042,10 +1042,10 @@ export default function ScrapbookLandingPage() {
 
               <Link
                 href="/dashboard?id=sample-assessment-stripe"
-                className="w-full sm:w-auto inline-flex items-center justify-center space-x-2 px-7 py-4 bg-white hover:bg-[#f4efe2] text-zinc-900 border border-[#d5ccba] font-mono text-sm font-semibold uppercase tracking-wider rounded transition-all shadow-xs"
+                className="w-full sm:w-auto inline-flex items-center justify-center space-x-2 px-7 py-4 bg-white hover:bg-[#f4efe2] text-[#2B211B] border border-[#d5ccba] font-mono text-sm font-bold uppercase tracking-wider rounded transition-all shadow-xs"
               >
                 <span>Explore Sample Mode</span>
-                <ArrowUpRight className="w-4 h-4 text-zinc-500" />
+                <ArrowUpRight className="w-4 h-4 text-[#2B211B]" />
               </Link>
             </div>
 

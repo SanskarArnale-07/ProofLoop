@@ -179,7 +179,7 @@ CREATE INDEX idx_idempotency_created ON idempotency_keys (created_at);`
           <form onSubmit={handleSubmit} className="space-y-4">
             {/* Presets */}
             <div>
-              <label className="block text-[11px] font-semibold uppercase text-zinc-500 mb-2">
+              <label className="block text-[11px] font-semibold uppercase text-zinc-700 dark:text-zinc-300 mb-2">
                 Simulated Push Action (Gap Solution)
               </label>
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
@@ -188,10 +188,10 @@ CREATE INDEX idx_idempotency_created ON idempotency_keys (created_at);`
                     key={k}
                     type="button"
                     onClick={() => handleSelectPreset(k)}
-                    className={`p-2.5 text-left border rounded transition-colors ${
+                    className={`p-2.5 text-left border rounded transition-colors cursor-pointer ${
                       selectedTaskType === k
                         ? 'border-black dark:border-white bg-zinc-100 dark:bg-zinc-900 font-bold text-zinc-900 dark:text-zinc-100'
-                        : 'border-zinc-200 dark:border-zinc-800 hover:border-zinc-400 text-zinc-600 dark:text-zinc-400'
+                        : 'border-zinc-200 dark:border-zinc-800 hover:border-zinc-400 text-zinc-700 dark:text-zinc-300'
                     }`}
                   >
                     <span className="block truncate">{p.label}</span>
@@ -202,7 +202,7 @@ CREATE INDEX idx_idempotency_created ON idempotency_keys (created_at);`
 
             {/* Commit Message */}
             <div>
-              <label className="block text-[11px] font-semibold uppercase text-zinc-500 mb-1">
+              <label className="block text-[11px] font-semibold uppercase text-zinc-700 dark:text-zinc-300 mb-1">
                 Commit Message
               </label>
               <input
@@ -216,11 +216,11 @@ CREATE INDEX idx_idempotency_created ON idempotency_keys (created_at);`
 
             {/* Simulated File to Push */}
             <div>
-              <label className="block text-[11px] font-semibold uppercase text-zinc-500 mb-1">
+              <label className="block text-[11px] font-semibold uppercase text-zinc-700 dark:text-zinc-300 mb-1">
                 Committed File & Excerpt Preview
               </label>
               <div className="rounded border border-zinc-800 bg-[#0d0d0e] p-3 text-zinc-300 text-[11px] font-mono max-h-36 overflow-y-auto">
-                <div className="text-zinc-500 mb-1 font-bold">
+                <div className="text-zinc-400 mb-1 font-bold">
                   {presets[selectedTaskType]?.file}
                 </div>
                 <pre className="whitespace-pre overflow-x-auto text-zinc-300">
@@ -235,7 +235,7 @@ CREATE INDEX idx_idempotency_created ON idempotency_keys (created_at);`
                 <span className="font-semibold text-zinc-800 dark:text-zinc-200 block">
                   Simulate Tampered HMAC Signature
                 </span>
-                <span className="text-[11px] text-zinc-500 block font-sans">
+                <span className="text-[11px] text-zinc-600 dark:text-zinc-400 block font-sans">
                   Tests that the server correctly rejects unauthorized or tampered webhook deliveries (HTTP 401).
                 </span>
               </div>
@@ -243,7 +243,7 @@ CREATE INDEX idx_idempotency_created ON idempotency_keys (created_at);`
                 type="checkbox"
                 checked={tamperSignature}
                 onChange={(e) => setTamperSignature(e.target.checked)}
-                className="w-4 h-4 accent-black dark:accent-white"
+                className="w-4 h-4 accent-black dark:accent-white cursor-pointer"
               />
             </div>
 
@@ -282,17 +282,17 @@ CREATE INDEX idx_idempotency_created ON idempotency_keys (created_at);`
               <button
                 type="button"
                 onClick={onClose}
-                className="px-4 py-2 border border-zinc-300 dark:border-zinc-700 hover:bg-zinc-100 dark:hover:bg-zinc-900 text-zinc-700 dark:text-zinc-300 rounded"
+                className="px-4 py-2 border border-zinc-300 dark:border-zinc-700 hover:bg-zinc-100 dark:hover:bg-zinc-900 text-zinc-700 dark:text-zinc-200 rounded font-medium cursor-pointer"
               >
                 Cancel
               </button>
               <button
                 type="submit"
                 disabled={isSubmitting}
-                className="px-5 py-2 bg-black hover:bg-zinc-800 text-white dark:bg-white dark:hover:bg-zinc-200 dark:text-black rounded font-bold flex items-center space-x-1.5 disabled:opacity-50"
+                className="px-5 py-2 bg-black hover:bg-zinc-800 text-white dark:bg-white dark:hover:bg-[#f4efe2] dark:text-[#2B211B] rounded font-bold flex items-center space-x-1.5 border border-transparent dark:border-[#d5ccba] disabled:opacity-50 cursor-pointer"
               >
                 <Send className="w-3.5 h-3.5" />
-                <span>{isSubmitting ? 'Verifying & Reassessing...' : 'Dispatch Webhook Push'}</span>
+                <span className="text-white dark:text-[#2B211B]">{isSubmitting ? 'Verifying & Reassessing...' : 'Dispatch Webhook Push'}</span>
               </button>
             </div>
           </form>

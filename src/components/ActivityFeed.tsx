@@ -10,7 +10,7 @@ interface ActivityFeedProps {
 export function ActivityFeed({ activities }: ActivityFeedProps) {
   if (!activities || activities.length === 0) {
     return (
-      <div className="p-6 border border-zinc-200 dark:border-zinc-800 rounded text-center text-xs font-mono text-zinc-500">
+      <div className="p-6 border border-zinc-200 dark:border-zinc-800 rounded text-center text-xs font-mono text-zinc-600 dark:text-zinc-400">
         No recorded repository activity yet.
       </div>
     );
@@ -25,7 +25,7 @@ export function ActivityFeed({ activities }: ActivityFeedProps) {
       case 'assessment_created':
         return <FileCheck2 className="w-3.5 h-3.5 text-zinc-700 dark:text-zinc-300" />;
       default:
-        return <GitCommit className="w-3.5 h-3.5 text-zinc-500" />;
+        return <GitCommit className="w-3.5 h-3.5 text-zinc-600 dark:text-zinc-400" />;
     }
   };
 
@@ -52,7 +52,7 @@ export function ActivityFeed({ activities }: ActivityFeedProps) {
                 : 'border-zinc-200 dark:border-zinc-800/80 bg-white dark:bg-zinc-950'
             }`}
           >
-            <div className="flex items-center justify-between text-[11px] text-zinc-500 mb-1">
+            <div className="flex items-center justify-between text-[11px] text-zinc-600 dark:text-zinc-400 mb-1">
               <div className="flex items-center space-x-2">
                 <span className="p-1 rounded bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800">
                   {getIcon(act.eventType)}
@@ -72,7 +72,7 @@ export function ActivityFeed({ activities }: ActivityFeedProps) {
             </p>
 
             {act.commitSha && (
-              <div className="mt-2.5 pt-2 border-t border-zinc-100 dark:border-zinc-900 flex items-center justify-between text-[11px] text-zinc-500">
+              <div className="mt-2.5 pt-2 border-t border-zinc-100 dark:border-zinc-900 flex items-center justify-between text-[11px] text-zinc-600 dark:text-zinc-400">
                 <div className="flex items-center space-x-1.5 truncate max-w-[80%]">
                   <GitCommit className="w-3 h-3 text-zinc-400 shrink-0" />
                   <span className="font-semibold text-zinc-800 dark:text-zinc-200">{act.commitSha}</span>

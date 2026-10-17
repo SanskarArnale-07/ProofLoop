@@ -238,28 +238,28 @@ interface VerifiedRepoDetails {
   return (
     <div className="min-h-screen bg-[#30251F] text-[#F5F0E5] flex flex-col justify-between font-mono">
       {/* Top Header */}
-      <header className="border-b border-zinc-200 dark:border-zinc-800 bg-white/70 dark:bg-zinc-950/70 backdrop-blur-md px-6 py-4">
+      <header className="border-b border-[#584638] bg-[#211A16]/90 backdrop-blur-md px-6 py-4">
         <div className="max-w-4xl mx-auto flex items-center justify-between">
           <Link href="/" className="flex items-center space-x-2">
-            <span className="text-xs font-bold tracking-tighter uppercase px-2 py-0.5 bg-black text-white dark:bg-white dark:text-black">
+            <span className="text-xs font-bold tracking-tighter uppercase px-2 py-0.5 bg-white text-[#2B211B] rounded-xs shadow-xs">
               PROOF&lt;LOOP&gt;
             </span>
-            <span className="font-editorial text-lg font-bold tracking-tight hidden sm:inline">
+            <span className="font-editorial text-lg font-bold tracking-tight text-[#F5F0E5] hidden sm:inline">
               ProofLoop
             </span>
           </Link>
 
           {/* Progress Indicator */}
-          <div className="flex items-center space-x-3 text-xs text-zinc-500">
-            <span className={step >= 1 ? 'text-black dark:text-white font-bold' : ''}>
+          <div className="flex items-center space-x-3 text-xs text-[#BDB0A2]">
+            <span className={step >= 1 ? 'text-[#F5F0E5] font-bold' : ''}>
               1. Job Posting
             </span>
             <span>→</span>
-            <span className={step >= 2 ? 'text-black dark:text-white font-bold' : ''}>
+            <span className={step >= 2 ? 'text-[#F5F0E5] font-bold' : ''}>
               2. GitHub Repository
             </span>
             <span>→</span>
-            <span className={step >= 3 ? 'text-black dark:text-white font-bold' : ''}>
+            <span className={step >= 3 ? 'text-[#F5F0E5] font-bold' : ''}>
               3. Scope & Analyze
             </span>
           </div>
@@ -272,21 +272,21 @@ interface VerifiedRepoDetails {
         {step === 1 && (
           <div className="space-y-8 animate-fade-in">
             <div>
-              <span className="text-xs uppercase tracking-widest text-zinc-500 block mb-2">
+              <span className="text-xs uppercase tracking-widest text-[#BDB0A2] block mb-2 font-semibold">
                 Step 1 of 3
               </span>
-              <h1 className="font-editorial text-3xl sm:text-4xl font-bold tracking-tight text-zinc-900 dark:text-zinc-100">
+              <h1 className="font-editorial text-3xl sm:text-4xl font-bold tracking-tight text-[#F5F0E5]">
                 Where are you applying?
               </h1>
-              <p className="text-xs text-zinc-600 dark:text-zinc-400 font-sans mt-2 leading-relaxed">
+              <p className="text-xs text-[#BDB0A2] font-sans mt-2 leading-relaxed">
                 Provide a real job or internship posting URL. We fetch the page server-side, preserve the source URL,
                 and extract the technical requirements you&apos;ll need to demonstrate in code.
               </p>
             </div>
 
             {/* Presets */}
-            <div className="p-4 bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded">
-              <span className="text-[11px] uppercase font-bold text-zinc-500 block mb-2">
+            <div className="p-4 bg-[#211A16] border border-[#584638] rounded">
+              <span className="text-[11px] uppercase font-bold text-[#BDB0A2] block mb-2">
                 Quick Real-World Presets (Click to Auto-Fill)
               </span>
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
@@ -295,12 +295,12 @@ interface VerifiedRepoDetails {
                     key={i}
                     type="button"
                     onClick={() => handleApplyPreset(p)}
-                    className="p-2.5 text-left bg-white dark:bg-zinc-950 border border-zinc-300 dark:border-zinc-700 hover:border-black dark:hover:border-white rounded transition-colors text-xs"
+                    className="p-2.5 text-left bg-[#30251F] border border-[#584638] hover:border-[#F5F0E5] rounded transition-colors text-xs cursor-pointer"
                   >
-                    <span className="font-bold text-zinc-900 dark:text-zinc-100 block truncate">
+                    <span className="font-bold text-[#F5F0E5] block truncate">
                       {p.company}
                     </span>
-                    <span className="text-[11px] text-zinc-500 truncate block">
+                    <span className="text-[11px] text-[#BDB0A2] truncate block">
                       {p.title.split('—')[1]?.trim() || p.title}
                     </span>
                   </button>
@@ -311,31 +311,31 @@ interface VerifiedRepoDetails {
             {/* Form */}
             <form onSubmit={handleExtractJob} className="space-y-4">
               <div>
-                <label className="block text-xs font-semibold uppercase text-zinc-600 dark:text-zinc-400 mb-1">
+                <label className="block text-xs font-semibold uppercase text-[#BDB0A2] mb-1">
                   Internship Posting URL
                 </label>
                 <div className="flex items-center space-x-2">
                   <div className="relative flex-1">
-                    <Globe className="w-4 h-4 absolute left-3 top-3 text-zinc-400" />
+                    <Globe className="w-4 h-4 absolute left-3 top-3 text-[#BDB0A2]" />
                     <input
                       type="url"
                       value={jobUrl}
                       onChange={(e) => setJobUrl(e.target.value)}
                       placeholder="https://jobs.lever.co/company/internship-id..."
                       required={!manualFallbackOpen}
-                      className="w-full pl-9 pr-3 py-2.5 bg-white dark:bg-zinc-950 border border-zinc-300 dark:border-zinc-700 rounded text-xs font-mono text-zinc-900 dark:text-zinc-100 focus:outline-hidden focus:border-black dark:focus:border-white"
+                      className="w-full pl-9 pr-3 py-2.5 bg-[#211A16] border border-[#584638] rounded text-xs font-mono text-[#F5F0E5] placeholder:text-[#BDB0A2]/60 focus:outline-hidden focus:border-[#DD5946]"
                     />
                   </div>
                 </div>
               </div>
 
               {extractError && (
-                <div className="p-4 bg-zinc-100 dark:bg-zinc-900 border border-zinc-400 dark:border-zinc-600 rounded space-y-2">
-                  <div className="flex items-center space-x-2 text-zinc-900 dark:text-zinc-100 font-bold text-xs">
-                    <AlertCircle className="w-4 h-4 text-red-500 shrink-0" />
+                <div className="p-4 bg-[#211A16] border border-red-500/60 rounded space-y-2">
+                  <div className="flex items-center space-x-2 text-[#F5F0E5] font-bold text-xs">
+                    <AlertCircle className="w-4 h-4 text-red-400 shrink-0" />
                     <span>Inaccessible or Protected Job Page</span>
                   </div>
-                  <p className="text-xs text-zinc-600 dark:text-zinc-400 font-sans">
+                  <p className="text-xs text-[#BDB0A2] font-sans">
                     {extractError} We never fabricate job descriptions. Please paste the job description text below.
                   </p>
                 </div>
@@ -346,17 +346,17 @@ interface VerifiedRepoDetails {
                 <button
                   type="button"
                   onClick={() => setManualFallbackOpen(!manualFallbackOpen)}
-                  className="text-xs text-zinc-600 dark:text-zinc-400 underline hover:text-black dark:hover:text-white"
+                  className="text-xs text-[#BDB0A2] underline hover:text-[#F5F0E5] cursor-pointer"
                 >
                   {manualFallbackOpen ? 'Hide Manual Requirements Entry' : 'Job behind login wall or paywall? Enter or paste text manually →'}
                 </button>
               </div>
 
               {manualFallbackOpen && (
-                <div className="p-4 bg-white dark:bg-zinc-950 border border-zinc-300 dark:border-zinc-700 rounded space-y-3 animate-fade-in">
+                <div className="p-4 bg-[#211A16] border border-[#584638] rounded space-y-3 animate-fade-in">
                   <div className="grid grid-cols-2 gap-3">
                     <div>
-                      <label className="block text-[11px] uppercase font-bold text-zinc-500 mb-1">
+                      <label className="block text-[11px] uppercase font-bold text-[#BDB0A2] mb-1">
                         Role Title
                       </label>
                       <input
@@ -364,11 +364,11 @@ interface VerifiedRepoDetails {
                         value={manualTitle}
                         onChange={(e) => setManualTitle(e.target.value)}
                         placeholder="e.g. Backend Engineering Intern"
-                        className="w-full px-3 py-2 bg-zinc-50 dark:bg-zinc-900 border border-zinc-300 dark:border-zinc-700 rounded text-xs"
+                        className="w-full px-3 py-2 bg-[#30251F] border border-[#584638] rounded text-xs text-[#F5F0E5] placeholder:text-[#BDB0A2]/60"
                       />
                     </div>
                     <div>
-                      <label className="block text-[11px] uppercase font-bold text-zinc-500 mb-1">
+                      <label className="block text-[11px] uppercase font-bold text-[#BDB0A2] mb-1">
                         Company Name
                       </label>
                       <input
@@ -376,13 +376,13 @@ interface VerifiedRepoDetails {
                         value={manualCompany}
                         onChange={(e) => setManualCompany(e.target.value)}
                         placeholder="e.g. Stripe, Vercel, Datadog"
-                        className="w-full px-3 py-2 bg-zinc-50 dark:bg-zinc-900 border border-zinc-300 dark:border-zinc-700 rounded text-xs"
+                        className="w-full px-3 py-2 bg-[#30251F] border border-[#584638] rounded text-xs text-[#F5F0E5] placeholder:text-[#BDB0A2]/60"
                       />
                     </div>
                   </div>
 
                   <div>
-                    <label className="block text-[11px] uppercase font-bold text-zinc-500 mb-1">
+                    <label className="block text-[11px] uppercase font-bold text-[#BDB0A2] mb-1">
                       Job Description & Requirements Text
                     </label>
                     <textarea
@@ -390,7 +390,7 @@ interface VerifiedRepoDetails {
                       onChange={(e) => setManualText(e.target.value)}
                       rows={5}
                       placeholder="Paste the requirements section here (API, SQL, Docker, testing, etc.)..."
-                      className="w-full px-3 py-2 bg-zinc-50 dark:bg-zinc-900 border border-zinc-300 dark:border-zinc-700 rounded text-xs font-mono"
+                      className="w-full px-3 py-2 bg-[#30251F] border border-[#584638] rounded text-xs font-mono text-[#F5F0E5] placeholder:text-[#BDB0A2]/60"
                     />
                   </div>
                 </div>
@@ -400,10 +400,10 @@ interface VerifiedRepoDetails {
                 <button
                   type="submit"
                   disabled={isExtracting}
-                  className="px-6 py-3 bg-black hover:bg-zinc-800 text-white dark:bg-white dark:hover:bg-zinc-200 dark:text-black font-mono text-xs font-bold rounded flex items-center space-x-2 disabled:opacity-50 transition-colors shadow-sm"
+                  className="px-6 py-3 bg-white hover:bg-[#f4efe2] text-[#2B211B] font-mono text-xs font-bold rounded flex items-center space-x-2 border border-[#d5ccba] disabled:opacity-50 transition-colors shadow-sm cursor-pointer"
                 >
-                  <span>{isExtracting ? 'Extracting Requirements...' : 'Continue to GitHub Setup'}</span>
-                  <ArrowRight className="w-3.5 h-3.5" />
+                  <span className="text-[#2B211B] font-bold">{isExtracting ? 'Extracting Requirements...' : 'Continue to GitHub Setup'}</span>
+                  <ArrowRight className="w-3.5 h-3.5 text-[#2B211B]" />
                 </button>
               </div>
             </form>
@@ -415,32 +415,32 @@ interface VerifiedRepoDetails {
           <div className="space-y-8 animate-fade-in">
             <button
               onClick={() => setStep(1)}
-              className="inline-flex items-center space-x-1 text-xs text-zinc-500 hover:text-black dark:hover:text-white"
+              className="inline-flex items-center space-x-1 text-xs text-[#BDB0A2] hover:text-[#F5F0E5] cursor-pointer"
             >
-              <ArrowLeft className="w-3.5 h-3.5" />
+              <ArrowLeft className="w-3.5 h-3.5 text-[#BDB0A2]" />
               <span>Back to Step 1</span>
             </button>
 
             <div>
-              <span className="text-xs uppercase tracking-widest text-zinc-500 block mb-2">
+              <span className="text-xs uppercase tracking-widest text-[#BDB0A2] block mb-2 font-semibold">
                 Step 2 of 3
               </span>
-              <h1 className="font-editorial text-3xl sm:text-4xl font-bold tracking-tight text-zinc-900 dark:text-zinc-100">
+              <h1 className="font-editorial text-3xl sm:text-4xl font-bold tracking-tight text-[#F5F0E5]">
                 Connect your code evidence
               </h1>
-              <p className="text-xs text-zinc-600 dark:text-zinc-400 font-sans mt-2 leading-relaxed">
-                Provide a public GitHub repository URL or repository identifier (e.g., <code className="font-mono bg-zinc-200 dark:bg-zinc-800 px-1 py-0.5 rounded">owner/repo</code>).
+              <p className="text-xs text-[#BDB0A2] font-sans mt-2 leading-relaxed">
+                Provide a public GitHub repository URL or repository identifier (e.g., <code className="font-mono bg-[#211A16] px-1 py-0.5 rounded text-[#F5F0E5]">owner/repo</code>).
                 ProofLoop validates that the repository is accessible and checks commit history before analysis.
               </p>
             </div>
 
             {/* Extracted Requirements Preview */}
-            <div className="p-4 bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded">
+            <div className="p-4 bg-[#211A16] border border-[#584638] rounded">
               <div className="flex items-center justify-between mb-2">
-                <span className="text-xs font-bold text-zinc-900 dark:text-zinc-100">
+                <span className="text-xs font-bold text-[#F5F0E5]">
                   {internshipData.company} — {internshipData.title}
                 </span>
-                <span className="text-[11px] text-zinc-500">
+                <span className="text-[11px] text-[#BDB0A2]">
                   {internshipData.requirements.length} Requirements Extracted
                 </span>
               </div>
@@ -448,7 +448,7 @@ interface VerifiedRepoDetails {
                 {internshipData.requirements.map(req => (
                   <span
                     key={req.id}
-                    className="px-2 py-0.5 bg-white dark:bg-zinc-950 border border-zinc-300 dark:border-zinc-700 rounded text-[10px] text-zinc-700 dark:text-zinc-300"
+                    className="px-2 py-0.5 bg-[#30251F] border border-[#584638] rounded text-[10px] text-[#F5F0E5]"
                   >
                     {req.title}
                   </span>
@@ -459,37 +459,37 @@ interface VerifiedRepoDetails {
             {/* Repo Input Form */}
             <form onSubmit={handleVerifyRepo} className="space-y-4">
               <div>
-                <label className="block text-xs font-semibold uppercase text-zinc-600 dark:text-zinc-400 mb-1">
+                <label className="block text-xs font-semibold uppercase text-[#BDB0A2] mb-1">
                   Public GitHub Repository URL
                 </label>
                 <div className="relative">
-                  <GithubIcon className="w-4 h-4 absolute left-3 top-3 text-zinc-400" />
+                  <GithubIcon className="w-4 h-4 absolute left-3 top-3 text-[#BDB0A2]" />
                   <input
                     type="text"
                     value={repoInput}
                     onChange={(e) => setRepoInput(e.target.value)}
                     placeholder="https://github.com/alexchen/payment-orchestrator or alexchen/payment-orchestrator"
                     required
-                    className="w-full pl-9 pr-3 py-2.5 bg-white dark:bg-zinc-950 border border-zinc-300 dark:border-zinc-700 rounded text-xs font-mono text-zinc-900 dark:text-zinc-100 focus:outline-hidden focus:border-black dark:focus:border-white"
+                    className="w-full pl-9 pr-3 py-2.5 bg-[#211A16] border border-[#584638] rounded text-xs font-mono text-[#F5F0E5] placeholder:text-[#BDB0A2]/60 focus:outline-hidden focus:border-[#DD5946]"
                   />
                 </div>
               </div>
 
               {/* Sample repos for instant demonstration */}
-              <div className="text-[11px] text-zinc-500 space-y-1">
-                <span className="font-bold text-zinc-700 dark:text-zinc-300">Quick Test Repositories:</span>
+              <div className="text-[11px] text-[#BDB0A2] space-y-1">
+                <span className="font-bold text-[#F5F0E5]">Quick Test Repositories:</span>
                 <div className="flex flex-wrap gap-2 pt-1">
                   <button
                     type="button"
                     onClick={() => setRepoInput('alexchen/payment-orchestrator')}
-                    className="px-2 py-1 bg-zinc-200 dark:bg-zinc-800 hover:bg-zinc-300 dark:hover:bg-zinc-700 text-zinc-800 dark:text-zinc-200 rounded text-[10px]"
+                    className="px-2.5 py-1 bg-[#211A16] hover:bg-[#3d3028] text-[#F5F0E5] border border-[#584638] rounded text-[10px] cursor-pointer transition-colors"
                   >
                     alexchen/payment-orchestrator (Sample Backend)
                   </button>
                   <button
                     type="button"
                     onClick={() => setRepoInput('vercel/next.js')}
-                    className="px-2 py-1 bg-zinc-200 dark:bg-zinc-800 hover:bg-zinc-300 dark:hover:bg-zinc-700 text-zinc-800 dark:text-zinc-200 rounded text-[10px]"
+                    className="px-2.5 py-1 bg-[#211A16] hover:bg-[#3d3028] text-[#F5F0E5] border border-[#584638] rounded text-[10px] cursor-pointer transition-colors"
                   >
                     vercel/next.js (Public Open Source)
                   </button>
@@ -497,8 +497,8 @@ interface VerifiedRepoDetails {
               </div>
 
               {repoError && (
-                <div className="p-3 bg-zinc-100 dark:bg-zinc-900 border border-zinc-400 dark:border-zinc-600 rounded flex items-center space-x-2 text-xs text-zinc-800 dark:text-zinc-200">
-                  <AlertCircle className="w-4 h-4 text-red-500 shrink-0" />
+                <div className="p-3 bg-[#211A16] border border-red-500/60 rounded flex items-center space-x-2 text-xs text-[#F5F0E5]">
+                  <AlertCircle className="w-4 h-4 text-red-400 shrink-0" />
                   <span>{repoError}</span>
                 </div>
               )}
@@ -507,10 +507,10 @@ interface VerifiedRepoDetails {
                 <button
                   type="submit"
                   disabled={isVerifyingRepo}
-                  className="px-6 py-3 bg-black hover:bg-zinc-800 text-white dark:bg-white dark:hover:bg-zinc-200 dark:text-black font-mono text-xs font-bold rounded flex items-center space-x-2 disabled:opacity-50 transition-colors shadow-sm"
+                  className="px-6 py-3 bg-white hover:bg-[#f4efe2] text-[#2B211B] font-mono text-xs font-bold rounded flex items-center space-x-2 border border-[#d5ccba] disabled:opacity-50 transition-colors shadow-sm cursor-pointer"
                 >
-                  <span>{isVerifyingRepo ? 'Verifying GitHub Access...' : 'Review Scope & Analyze'}</span>
-                  <ArrowRight className="w-3.5 h-3.5" />
+                  <span className="text-[#2B211B] font-bold">{isVerifyingRepo ? 'Verifying GitHub Access...' : 'Review Scope & Analyze'}</span>
+                  <ArrowRight className="w-3.5 h-3.5 text-[#2B211B]" />
                 </button>
               </div>
             </form>
@@ -522,20 +522,20 @@ interface VerifiedRepoDetails {
           <div className="space-y-8 animate-fade-in">
             <button
               onClick={() => setStep(2)}
-              className="inline-flex items-center space-x-1 text-xs text-zinc-500 hover:text-black dark:hover:text-white"
+              className="inline-flex items-center space-x-1 text-xs text-[#BDB0A2] hover:text-[#F5F0E5] cursor-pointer"
             >
-              <ArrowLeft className="w-3.5 h-3.5" />
+              <ArrowLeft className="w-3.5 h-3.5 text-[#BDB0A2]" />
               <span>Back to Step 2</span>
             </button>
 
             <div>
-              <span className="text-xs uppercase tracking-widest text-zinc-500 block mb-2">
+              <span className="text-xs uppercase tracking-widest text-[#BDB0A2] block mb-2 font-semibold">
                 Step 3 of 3
               </span>
-              <h1 className="font-editorial text-3xl sm:text-4xl font-bold tracking-tight text-zinc-900 dark:text-zinc-100">
+              <h1 className="font-editorial text-3xl sm:text-4xl font-bold tracking-tight text-[#F5F0E5]">
                 Confirm scope & run assessment
               </h1>
-              <p className="text-xs text-zinc-600 dark:text-zinc-400 font-sans mt-2 leading-relaxed">
+              <p className="text-xs text-[#BDB0A2] font-sans mt-2 leading-relaxed">
                 Review the selected internship and verified repository. ProofLoop will scan the repository tree,
                 evaluate candidate evidence, and compute demonstrated skills and evidence gaps.
               </p>
@@ -543,54 +543,54 @@ interface VerifiedRepoDetails {
 
             {/* Scope Summary Cards */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs font-mono">
-              <div className="p-5 bg-white dark:bg-zinc-950 border border-zinc-300 dark:border-zinc-700 rounded space-y-2">
-                <span className="text-[10px] uppercase text-zinc-400 font-bold block">
+              <div className="p-5 bg-[#211A16] border border-[#584638] rounded space-y-2">
+                <span className="text-[10px] uppercase text-[#BDB0A2] font-bold block">
                   Target Internship
                 </span>
-                <div className="font-bold text-sm text-zinc-900 dark:text-zinc-100">
+                <div className="font-bold text-sm text-[#F5F0E5]">
                   {internshipData.title}
                 </div>
-                <div className="text-zinc-600 dark:text-zinc-400">
-                  Company: <span className="text-black dark:text-white font-semibold">{internshipData.company}</span>
+                <div className="text-[#BDB0A2]">
+                  Company: <span className="text-[#F5F0E5] font-semibold">{internshipData.company}</span>
                 </div>
-                <div className="text-zinc-500 truncate text-[11px]">
+                <div className="text-[#BDB0A2] truncate text-[11px]">
                   Source: {internshipData.sourceUrl}
                 </div>
-                <div className="pt-2 text-[11px] text-zinc-600 dark:text-zinc-400">
+                <div className="pt-2 text-[11px] text-[#BDB0A2]">
                   {internshipData.requirements.length} requirements queued for matching.
                 </div>
               </div>
 
-              <div className="p-5 bg-white dark:bg-zinc-950 border border-zinc-300 dark:border-zinc-700 rounded space-y-2">
-                <span className="text-[10px] uppercase text-zinc-400 font-bold block">
+              <div className="p-5 bg-[#211A16] border border-[#584638] rounded space-y-2">
+                <span className="text-[10px] uppercase text-[#BDB0A2] font-bold block">
                   Verified Repository
                 </span>
-                <div className="font-bold text-sm text-zinc-900 dark:text-zinc-100">
+                <div className="font-bold text-sm text-[#F5F0E5]">
                   {repoDetails.fullName}
                 </div>
-                <div className="text-zinc-600 dark:text-zinc-400">
-                  Branch: <span className="text-black dark:text-white font-semibold">{repoDetails.defaultBranch}</span>
+                <div className="text-[#BDB0A2]">
+                  Branch: <span className="text-[#F5F0E5] font-semibold">{repoDetails.defaultBranch}</span>
                 </div>
-                <div className="text-zinc-500 text-[11px]">
-                  Commit: <span className="font-bold">{repoDetails.latestCommitSha}</span> ({repoDetails.latestCommitMessage})
+                <div className="text-[#BDB0A2] text-[11px]">
+                  Commit: <span className="font-bold text-[#F5F0E5]">{repoDetails.latestCommitSha}</span> ({repoDetails.latestCommitMessage})
                 </div>
-                <div className="pt-2 text-emerald-600 dark:text-emerald-400 text-[11px] flex items-center space-x-1">
-                  <CheckCircle2 className="w-3.5 h-3.5" />
+                <div className="pt-2 text-emerald-400 text-[11px] flex items-center space-x-1">
+                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
                   <span>Access verified & ready for scan</span>
                 </div>
               </div>
             </div>
 
             {analysisError && (
-              <div className="p-4 bg-red-50 dark:bg-red-950/40 border border-red-300 dark:border-red-800 rounded flex items-center justify-between text-xs text-red-800 dark:text-red-200">
+              <div className="p-4 bg-[#211A16] border border-red-500/60 rounded flex items-center justify-between text-xs text-[#F5F0E5]">
                 <div className="flex items-center space-x-2">
-                  <AlertCircle className="w-4 h-4 text-red-600 dark:text-red-400 shrink-0" />
+                  <AlertCircle className="w-4 h-4 text-red-400 shrink-0" />
                   <span>Previous attempt failed: {analysisError}</span>
                 </div>
                 <button
                   type="button"
                   onClick={() => setAnalysisError(null)}
-                  className="text-[10px] uppercase font-bold text-zinc-500 hover:text-black dark:hover:text-white"
+                  className="text-[10px] uppercase font-bold text-[#BDB0A2] hover:text-[#F5F0E5] cursor-pointer"
                 >
                   Dismiss
                 </button>
@@ -598,8 +598,8 @@ interface VerifiedRepoDetails {
             )}
 
             {/* Run Button */}
-            <div className="pt-4 flex items-center justify-between border-t border-zinc-200 dark:border-zinc-800">
-              <span className="text-xs text-zinc-500 font-sans">
+            <div className="pt-4 flex items-center justify-between border-t border-[#584638]">
+              <span className="text-xs text-[#BDB0A2] font-sans">
                 Evidence results will be persisted and monitored for commit updates.
               </span>
 
@@ -607,10 +607,10 @@ interface VerifiedRepoDetails {
                 type="button"
                 disabled={isSubmitting || isAnalyzing}
                 onClick={handleStartAnalysis}
-                className="px-8 py-3.5 bg-black hover:bg-zinc-800 text-white dark:bg-white dark:hover:bg-zinc-200 dark:text-black font-mono text-xs font-bold rounded flex items-center space-x-2 shadow-md transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                className="px-8 py-3.5 bg-white hover:bg-[#f4efe2] text-[#2B211B] font-mono text-xs font-bold rounded flex items-center space-x-2 shadow-md transition-all border border-[#d5ccba] disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
               >
-                <Sparkles className="w-4 h-4" />
-                <span>{isSubmitting || isAnalyzing ? 'Starting Assessment...' : 'Start Evidence Assessment'}</span>
+                <Sparkles className="w-4 h-4 text-[#2B211B]" />
+                <span className="text-[#2B211B] font-bold">{isSubmitting || isAnalyzing ? 'Starting Assessment...' : 'Start Evidence Assessment'}</span>
               </button>
             </div>
           </div>
