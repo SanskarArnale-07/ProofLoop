@@ -34,30 +34,6 @@ export default function ScrapbookLandingPage() {
   const [webhookSimulated, setWebhookSimulated] = useState(false);
   const [isSimulating, setIsSimulating] = useState(false);
 
-  // Active section tracking for floating editorial table-of-contents
-  const [activeChapter, setActiveChapter] = useState('cover');
-
-  useEffect(() => {
-    const handleScroll = () => {
-      const scrollPos = window.scrollY + 250;
-      const sections = ['cover', 'resume', 'evidence', 'matching', 'cta'];
-      for (const sectionId of sections) {
-        const el = document.getElementById(sectionId);
-        if (el) {
-          const top = el.offsetTop;
-          const height = el.offsetHeight;
-          if (scrollPos >= top && scrollPos < top + height) {
-            setActiveChapter(sectionId);
-            break;
-          }
-        }
-      }
-    };
-
-    window.addEventListener('scroll', handleScroll, { passive: true });
-    return () => window.removeEventListener('scroll', handleScroll);
-  }, []);
-
   const handleSimulatePush = () => {
     setIsSimulating(true);
     setTimeout(() => {
@@ -75,50 +51,14 @@ export default function ScrapbookLandingPage() {
       {/* Editorial Floating Masthead / Navigation */}
       <header className="sticky top-0 z-50 backdrop-blur-md bg-[#09090c]/85 border-b border-zinc-800/80 px-6 py-3.5 transition-all">
         <div className="max-w-7xl mx-auto flex items-center justify-between">
-          <div className="flex items-center space-x-3.5">
+          <Link href="/" className="flex items-center space-x-3.5">
             <span className="font-mono text-xs font-bold tracking-wider px-2 py-0.5 bg-[#d94834] text-white rounded-xs uppercase shadow-xs">
               PROOF&lt;LOOP&gt;
             </span>
-            <span className="font-editorial text-lg tracking-tight font-medium text-zinc-300 hidden sm:inline">
-              Engineering Dossier
-            </span>
-            <span className="text-zinc-600 font-mono text-xs hidden md:inline">•</span>
-            <span className="font-mono text-[11px] text-zinc-400 hidden md:inline">
-              Problem W-PS-2
-            </span>
-          </div>
+          </Link>
 
-          {/* Quick jump chapter tabs */}
-          <nav className="hidden lg:flex items-center space-x-6 text-xs font-mono text-zinc-400">
-            {[
-              { id: 'cover', label: '00 Cover' },
-              { id: 'resume', label: '01 Résumé' },
-              { id: 'evidence', label: '02 GitHub Evidence' },
-              { id: 'matching', label: '03 Requirements' },
-              { id: 'cta', label: '04 Prove Fit' },
-            ].map((tab) => (
-              <a
-                key={tab.id}
-                href={`#${tab.id}`}
-                className={`transition-colors hover:text-white ${
-                  activeChapter === tab.id
-                    ? 'text-[#d94834] font-bold underline decoration-1 underline-offset-4'
-                    : 'text-zinc-400'
-                }`}
-              >
-                {tab.label}
-              </a>
-            ))}
-          </nav>
-
-          {/* Action CTAs */}
+          {/* Action CTA */}
           <div className="flex items-center space-x-3">
-            <Link
-              href="/dashboard?id=sample-assessment-stripe"
-              className="text-xs font-mono text-zinc-400 hover:text-zinc-100 transition-colors hidden sm:inline-flex items-center space-x-1 px-2.5 py-1.5 rounded hover:bg-zinc-800/60"
-            >
-              <span>Explore Sample</span>
-            </Link>
             <Link
               href="/onboard"
               className="inline-flex items-center space-x-2 px-3.5 py-1.5 bg-[#d94834] hover:bg-[#c63d2a] text-white text-xs font-mono font-medium rounded-xs shadow-sm transition-all"
@@ -137,14 +77,6 @@ export default function ScrapbookLandingPage() {
         id="cover"
         className="relative min-h-[92vh] flex items-center justify-center px-4 sm:px-6 lg:px-8 py-12 lg:py-20 bg-dark-canvas"
       >
-        {/* Subtle decorative desk items in the background */}
-        <div className="absolute top-10 left-8 text-zinc-700/40 font-mono text-[11px] select-none pointer-events-none hidden lg:block">
-          ARCHIVE REF: PL-2026-WPS2 // REVISION 04
-        </div>
-        <div className="absolute bottom-10 right-8 text-zinc-700/40 font-mono text-[11px] select-none pointer-events-none hidden lg:block">
-          SURFACE: 300GSM WARM VELIN • SPIRAL BOUND
-        </div>
-
         {/* The Physical Notebook Artifact */}
         <div className="relative w-full max-w-5xl mx-auto">
           {/* Outer binding edge shadow & red edge trim */}
@@ -173,7 +105,7 @@ export default function ScrapbookLandingPage() {
                 <div className="flex items-center space-x-2.5">
                   <span className="w-2.5 h-2.5 rounded-full bg-[#d94834] animate-pulse" />
                   <span className="font-mono text-xs font-bold tracking-widest uppercase text-zinc-800">
-                    AI CAREER COACH · PROBLEM W-PS-2
+                    AI CAREER COACH · EVIDENCE ASSESSMENT
                   </span>
                 </div>
 
@@ -1145,10 +1077,6 @@ export default function ScrapbookLandingPage() {
         <div className="max-w-7xl mx-auto flex flex-col md:flex-row items-center justify-between gap-6">
           <div className="flex flex-wrap items-center space-x-3">
             <span className="font-bold text-zinc-200">ProofLoop</span>
-            <span>•</span>
-            <span className="text-zinc-400">Agentic AI Hackathon W-PS-2: AI Career Coach</span>
-            <span>•</span>
-            <span className="text-zinc-600">Editorial Scrapbook Edition</span>
           </div>
 
           <div className="flex items-center space-x-6 text-zinc-400">
