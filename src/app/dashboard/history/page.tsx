@@ -5,7 +5,7 @@ import { useSearchParams } from 'next/navigation';
 import { Navigation } from '@/components/Navigation';
 import { Header } from '@/components/Header';
 import { Assessment, AssessmentRevision } from '@/lib/types';
-import { History, GitCommit, Calendar, Radio, CheckCircle2, ChevronRight, BookOpen, Layers, Maximize2 } from 'lucide-react';
+import { GitCommit, BookOpen, Layers, Maximize2 } from 'lucide-react';
 import { WorkingVolumes } from '@/components/WorkingVolumes';
 
 function HistoryContent() {

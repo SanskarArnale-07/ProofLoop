@@ -5,88 +5,13 @@ import { createJiti } from 'jiti';
 const jiti = createJiti(import.meta.url);
 
 const {
-  SCORING_RULE_VERSION,
-  DEFAULT_SCORING_CONFIG,
-  computeScoreForEvidence,
-  rankEvidenceDeterministically
-} = jiti('../src/lib/scoring.ts');
-
-const {
-  analyzeAIAuthorshipSignals,
-  AI_SIGNAL_DISCLAIMER
-} = jiti('../src/lib/ai-signals.ts');
-
-const {
-  isSensitivePath,
-  redactSensitiveContent,
-  parseGitHubRepoUrl
-} = jiti('../src/lib/github.ts');
-
-const {
-  verifyWebhookSignature,
-  identifyAffectedRequirements
-} = jiti('../src/lib/webhook.ts');
-
-const {
   compareRevisions,
-  recordAssessmentFailure,
-  saveAssessment,
-  getAssessment,
-  saveRevision,
-  getRevisionHistory,
-  getEvaluationHistory,
-  MAX_RETAINED_EVALUATIONS_PER_ASSESSMENT,
-  enforceEvaluationRetention,
-  recordWebhookDelivery
+  getEvaluationHistory
 } = jiti('../src/lib/db.ts');
 
 const {
-  SAMPLE_ASSESSMENT,
-  ensureSampleDataSeeded
-} = jiti('../src/lib/sample-data.ts');
-
-const {
-  evaluateRepositoryCore,
-  analyzeRepositoryAgainstRequirements
+  evaluateRepositoryCore
 } = jiti('../src/lib/analyzer.ts');
-
-// ============================================================================
-// Additional helper functions for evidence-based evaluation testing
-// ============================================================================
-
-function createRepositoryEvidence(options) {
-  return {
-    requirementId: options.requirementId,
-    requirementTitle: options.requirementTitle,
-    status: options.status,
-    evidenceType: options.evidenceType,
-    evidenceStrength: options.evidenceStrength,
-    explanation: options.explanation,
-    humanReadableExplanation: options.humanReadableExplanation || options.explanation,
-    filePath: options.filePath,
-    lineStart: options.lineStart,
-    lineEnd: options.lineEnd,
-    codeExcerpt: options.codeExcerpt,
-    confidence: options.confidence || 50,
-    relevantCommits: options.relevantCommits || [],
-    relevantFiles: options.relevantFiles || [],
-    additionsOrPatterns: options.additionsOrPatterns || [],
-    testResultsSummary: options.testResultsSummary,
-    limitations: options.limitations || [],
-    contradictoryEvidence: options.contradictoryEvidence || [],
-    missingInformation: options.missingInformation || [],
-    uncertaintyNotes: options.uncertaintyNotes,
-    authorAttribution: options.authorAttribution || {
-      author: 'Repository Contributor',
-      isDirectAuthor: true,
-      attributionCertainty: 'probable'
-    },
-    sharedEvidenceWith: options.sharedEvidenceWith || [],
-    isInsufficientEvidence: options.isInsufficientEvidence || false,
-    repoFullName: 'test/evidence-repo',
-    commitSha: 'abc123'
-  };
-}
 
 function createInternshipRequirement(options) {
   return {
@@ -96,20 +21,6 @@ function createInternshipRequirement(options) {
     category: options.category,
     importance: options.importance,
     isInferred: false
-  };
-}
-
-function createAnalysisContext(options) {
-  return {
-    owner: options.owner,
-    repo: options.repo,
-    defaultBranch: options.defaultBranch,
-    commitSha: options.commitSha,
-    fileTree: options.fileTree || [],
-    commits: options.commits || [],
-    token: options.token,
-    localFileCache: options.localFileCache || {},
-    diffs: options.diffs || []
   };
 }
 
@@ -179,21 +90,6 @@ test('36. Evaluation History and Comparison - Full Implementation Verification',
 
   assert.equal(initialResult.success, true, 'Initial evaluation should succeed');
   assert.equal(initialResult.evidenceList.length, 3, 'Should analyze all 3 requirements');
-
-  // Verify initial evaluation structure
-  const initialRev = {
-    id: initialResult.newRevisionNumber,
-    assessmentId: initialResult.assessmentId,
-    revisionNumber: 1,
-    commitSha: 'abc123',
-    commitMessage: 'Initial assessment completed',
-    triggerType: 'initial',
-    evidence: initialResult.evidenceList,
-    demonstratedCount: initialResult.demonstratedCount,
-    partialCount: initialResult.partialCount,
-    notDemonstratedCount: initialResult.notDemonstratedCount,
-    createdAt: new Date().toISOString()
-  };
 
   // Create second evaluation (webhook trigger)
   const secondResult = await evaluateRepositoryCore({
