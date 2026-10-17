@@ -110,6 +110,15 @@ export interface RepositoryEvidence {
   authorAttribution?: AuthorAttribution;
   sharedEvidenceWith?: string[];
   isInsufficientEvidence?: boolean;
+
+  // Source-code retrieval and diagnostic verification properties
+  sourceRetrievalStatus?: 'retrieved' | 'failed' | 'not_attempted' | 'missing_file';
+  sourceRetrievalError?: string;
+  detectedWhat?: string;
+  evidenceSupports?: string;
+  notVerified?: string;
+  confidenceExplanation?: string;
+  verificationLevel?: 'file_discovery' | 'source_inspected' | 'implementation_verified' | 'negative_verification';
 }
 
 export interface AISignalFinding {

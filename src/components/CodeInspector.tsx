@@ -1,7 +1,17 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { X, Copy, Check, ExternalLink, FileCode } from 'lucide-react';
+import {
+  X,
+  Copy,
+  Check,
+  ExternalLink,
+  FileCode,
+  AlertCircle,
+  AlertTriangle,
+  ShieldCheck,
+  CheckCircle2,
+} from 'lucide-react';
 import { RepositoryEvidence } from '@/lib/types';
 
 interface CodeInspectorProps {
@@ -39,6 +49,21 @@ function detectLanguage(filePath?: string): string | null {
   if (!filePath) return null;
   const ext = filePath.split('.').pop()?.toLowerCase();
   return ext ? (LANGUAGE_BY_EXTENSION[ext] ?? null) : null;
+}
+
+function formatVerificationLevel(level?: string): string {
+  switch (level) {
+    case 'implementation_verified':
+      return 'Implementation Verified';
+    case 'source_inspected':
+      return 'Source Inspected';
+    case 'file_discovery':
+      return 'File Discovery Only';
+    case 'negative_verification':
+      return 'Negative Verification';
+    default:
+      return 'Unverified';
+  }
 }
 
 const KEYWORDS = new Set([
@@ -147,27 +172,33 @@ export function CodeInspector({
 
   const statusConfig = {
     demonstrated: {
-      label: 'DEMONSTRATED',
-      icon: <Check className="w-3 h-3 shrink-0 text-[#2e5738]" />,
+      label: 'VERIFIED',
+      icon: <Check className="w-3.5 h-3.5 shrink-0 text-[#2e5738]" />,
       border: 'border-[#2e5738]/50',
       text: 'text-[#2e5738]',
       bg: 'bg-[#2e5738]/10',
     },
     partial: {
       label: 'PARTIAL EVIDENCE',
-      icon: <Copy className="w-3 h-3 shrink-0 text-[#854d0e]" />,
+      icon: <AlertTriangle className="w-3.5 h-3.5 shrink-0 text-[#854d0e]" />,
       border: 'border-[#854d0e]/50',
       text: 'text-[#854d0e]',
       bg: 'bg-[#854d0e]/10',
     },
     not_demonstrated: {
-      label: 'NOT YET DEMONSTRATED',
-      icon: <X className="w-3 h-3 shrink-0 text-[#4e4b44]" />,
-      border: 'border-[#4e4b44]/50',
-      text: 'text-[#4e4b44]',
-      bg: 'bg-transparent',
+      label: 'INSUFFICIENT EVIDENCE',
+      icon: <X className="w-3.5 h-3.5 shrink-0 text-[#5c554e]" />,
+      border: 'border-[#5c554e]/50',
+      text: 'text-[#5c554e]',
+      bg: 'bg-[#5c554e]/10',
     },
-  }[evidence.status];
+  }[evidence.status] || {
+    label: 'INSUFFICIENT EVIDENCE',
+    icon: <X className="w-3.5 h-3.5 shrink-0 text-[#5c554e]" />,
+    border: 'border-[#5c554e]/50',
+    text: 'text-[#5c554e]',
+    bg: 'bg-[#5c554e]/10',
+  };
 
   return (
     <div
@@ -201,7 +232,7 @@ export function CodeInspector({
           {/* Cream paper sheet */}
           <div className="relative flex flex-col h-full min-h-0 overflow-hidden border border-[#C5B9A5] bg-[#F5EFE3] rounded-[22px]">
             {/* Header */}
-            <header className="relative px-8 py-8 border-b border-[#C5B9A5] bg-[#F5EFE3] flex flex-col gap-2 z-10">
+            <header className="relative px-8 py-6 border-b border-[#C5B9A5] bg-[#F5EFE3] flex flex-col gap-2 z-10">
               <div className="flex items-start justify-between gap-6">
                 <div className="flex flex-col gap-1.5">
                   <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-sm border border-[#DD604C]/50 bg-[#DD604C]/12 text-[10px] font-mono font-bold uppercase tracking-wider text-[#DD604C]">
@@ -238,7 +269,7 @@ export function CodeInspector({
 
             <div className="flex flex-1 min-h-0 overflow-hidden">
               {/* Left metadata sidebar */}
-              <aside className="flex-none w-[24%] max-w-[300px] border-r border-[#C5B9A5] bg-[#EDE3D2] p-7 overflow-y-auto min-h-0 flex flex-col gap-5">
+              <aside className="flex-none w-[26%] max-w-[320px] border-r border-[#C5B9A5] bg-[#EDE3D2] p-6 overflow-y-auto min-h-0 flex flex-col gap-4">
                 <div>
                   <p className="text-[10px] font-mono font-bold uppercase tracking-wider text-[#4E4B44] mb-1">
                     File
@@ -247,6 +278,7 @@ export function CodeInspector({
                     {evidence.filePath || 'No source file detected'}
                   </p>
                 </div>
+
                 <div className="pt-2 border-t border-[#D5D8D2]">
                   <p className="text-[10px] font-mono font-bold uppercase tracking-wider text-[#4E4B44] mb-1">
                     Repository
@@ -255,24 +287,64 @@ export function CodeInspector({
                     {evidence.repoFullName || '—'}
                   </p>
                 </div>
+
                 {evidence.lineStart && (
                   <div className="pt-2 border-t border-[#D5D8D2]">
                     <p className="text-[10px] font-mono font-bold uppercase tracking-wider text-[#4E4B44] mb-1">
-                      Lines
+                      Line Range
                     </p>
                     <p className="text-sm font-mono text-[#252522]">
                       :L{evidence.lineStart}-L{evidence.lineEnd}
                     </p>
                   </div>
                 )}
+
                 <div className="pt-2 border-t border-[#D5D8D2]">
                   <p className="text-[10px] font-mono font-bold uppercase tracking-wider text-[#4E4B44] mb-1">
-                    Commit
+                    Analyzed Commit
                   </p>
                   <p className="text-sm font-mono text-[#252522] truncate" title={evidence.commitSha}>
                     {evidence.commitSha.slice(0, 7)}
                   </p>
                 </div>
+
+                <div className="pt-2 border-t border-[#D5D8D2]">
+                  <p className="text-[10px] font-mono font-bold uppercase tracking-wider text-[#4E4B44] mb-1">
+                    Verification Level
+                  </p>
+                  <p className="text-xs font-mono font-semibold text-[#252522]">
+                    {formatVerificationLevel(evidence.verificationLevel)}
+                  </p>
+                </div>
+
+                <div className="pt-2 border-t border-[#D5D8D2]">
+                  <p className="text-[10px] font-mono font-bold uppercase tracking-wider text-[#4E4B44] mb-1">
+                    Confidence Score
+                  </p>
+                  <div className="flex items-center gap-2">
+                    <span className="text-base font-mono font-bold text-[#252522]">
+                      {evidence.confidence}%
+                    </span>
+                    <span className="text-[10px] font-mono px-1.5 py-0.5 rounded border border-[#C5B9A5] bg-[#F5EFE3] text-[#4E4B44] font-semibold">
+                      {evidence.confidence >= 80 ? 'HIGH' : evidence.confidence >= 50 ? 'MODERATE' : 'LOW'}
+                    </span>
+                  </div>
+                </div>
+
+                {evidence.sourceRetrievalStatus && (
+                  <div className="pt-2 border-t border-[#D5D8D2]">
+                    <p className="text-[10px] font-mono font-bold uppercase tracking-wider text-[#4E4B44] mb-1">
+                      Source Code Status
+                    </p>
+                    <p className="text-xs font-mono text-[#252522]">
+                      {evidence.sourceRetrievalStatus === 'retrieved' && 'Retrieved from analyzed commit'}
+                      {evidence.sourceRetrievalStatus === 'failed' && 'Retrieval failed'}
+                      {evidence.sourceRetrievalStatus === 'missing_file' && 'File not present in tree'}
+                      {evidence.sourceRetrievalStatus === 'not_attempted' && 'Inspection not attempted'}
+                    </p>
+                  </div>
+                )}
+
                 {language && (
                   <div className="pt-2 border-t border-[#D5D8D2]">
                     <p className="text-[10px] font-mono font-bold uppercase tracking-wider text-[#4E4B44] mb-1">
@@ -283,28 +355,71 @@ export function CodeInspector({
                 )}
               </aside>
 
-              {/* Main evidence document: explanation + code */}
+              {/* Main evidence document: explanation + diagnostic cards + code */}
               <main className="flex-1 flex flex-col min-h-0 overflow-hidden bg-[#F5EFE3]">
-                {/* Explanation */}
-                <section className="p-7 border-b border-[#C5B9A5] overflow-y-auto bg-[#F5EFE3]">
-                  <p className="text-[11px] font-mono font-bold uppercase tracking-wider text-[#4E4B44] mb-2">
-                    EVIDENCE-LINKED FINDING
-                  </p>
-                  <p className="text-sm leading-relaxed text-[#252522] font-sans">
-                    {evidence.explanation}
-                  </p>
-                  <p className="mt-3 text-[11px] font-mono text-[#4E4B44]">
-                    Source: Verified from tree inspection of commit{' '}
-                    <span className="font-bold text-[#252522]">{evidence.commitSha.slice(0, 7)}</span>
-                    {'. '}
-                    Confidence score: {evidence.confidence}%
-                  </p>
+                {/* Explanation and Diagnostic Breakdown */}
+                <section className="p-6 border-b border-[#C5B9A5] overflow-y-auto bg-[#F5EFE3] max-h-[36vh] flex flex-col gap-3">
+                  <div>
+                    <p className="text-[11px] font-mono font-bold uppercase tracking-wider text-[#4E4B44] mb-1">
+                      EVIDENCE-LINKED FINDING
+                    </p>
+                    <p className="text-sm leading-relaxed text-[#252522] font-sans">
+                      {evidence.explanation}
+                    </p>
+                  </div>
+
+                  {/* 4 Structured Diagnostic Cards */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5 pt-1">
+                    {/* What was detected */}
+                    <div className="rounded-md border border-[#C5B9A5] bg-[#EDE3D2]/70 p-3 flex flex-col gap-1">
+                      <div className="flex items-center gap-1.5 text-[10px] font-mono font-bold uppercase tracking-wider text-[#4E4B44]">
+                        <FileCode className="w-3 h-3 text-[#5B6A9C]" />
+                        <span>What Was Detected</span>
+                      </div>
+                      <p className="text-xs text-[#252522] leading-relaxed font-sans">
+                        {evidence.detectedWhat || (evidence.filePath ? `Discovered file ${evidence.filePath}` : 'No matching files or declarations discovered in repository.')}
+                      </p>
+                    </div>
+
+                    {/* Supporting Evidence */}
+                    <div className="rounded-md border border-[#C5B9A5] bg-[#EDE3D2]/70 p-3 flex flex-col gap-1">
+                      <div className="flex items-center gap-1.5 text-[10px] font-mono font-bold uppercase tracking-wider text-[#4E4B44]">
+                        <CheckCircle2 className="w-3 h-3 text-[#2e5738]" />
+                        <span>Supporting Evidence</span>
+                      </div>
+                      <p className="text-xs text-[#252522] leading-relaxed font-sans">
+                        {evidence.evidenceSupports || (evidence.status === 'demonstrated' ? 'Implementation verified with concrete declarations in repository tree.' : 'Partial or structural signals discovered without complete functional verification.')}
+                      </p>
+                    </div>
+
+                    {/* What was not verified */}
+                    <div className="rounded-md border border-[#C5B9A5] bg-[#EDE3D2]/70 p-3 flex flex-col gap-1">
+                      <div className="flex items-center gap-1.5 text-[10px] font-mono font-bold uppercase tracking-wider text-[#4E4B44]">
+                        <AlertTriangle className="w-3 h-3 text-[#854d0e]" />
+                        <span>What Was Not Verified</span>
+                      </div>
+                      <p className="text-xs text-[#252522] leading-relaxed font-sans">
+                        {evidence.notVerified || (evidence.status === 'demonstrated' ? 'No outstanding unverified verification requirements for this scope.' : 'Full requirement implementation not verified in analyzed tree.')}
+                      </p>
+                    </div>
+
+                    {/* Confidence Basis */}
+                    <div className="rounded-md border border-[#C5B9A5] bg-[#EDE3D2]/70 p-3 flex flex-col gap-1">
+                      <div className="flex items-center gap-1.5 text-[10px] font-mono font-bold uppercase tracking-wider text-[#4E4B44]">
+                        <ShieldCheck className="w-3 h-3 text-[#5B6A9C]" />
+                        <span>Confidence Basis ({evidence.confidence}%)</span>
+                      </div>
+                      <p className="text-xs text-[#252522] leading-relaxed font-sans">
+                        {evidence.confidenceExplanation || `Calculated based on ${evidence.evidenceStrength || 'available'} ${evidence.evidenceType || 'repository'} evidence.`}
+                      </p>
+                    </div>
+                  </div>
                 </section>
 
                 {/* Code region */}
                 <div className="flex-1 min-h-0 overflow-hidden flex flex-col">
                   {/* Source metadata bar: toolbar with own background + bottom border */}
-                  <div className="flex items-center justify-between px-7 py-3 border-b border-[#C5B9A5] bg-[#D5D8D2] flex-shrink-0">
+                  <div className="flex items-center justify-between px-6 py-2.5 border-b border-[#C5B9A5] bg-[#D5D8D2] flex-shrink-0">
                     <div className="flex items-center gap-2 text-xs font-mono text-[#4E4B44]">
                       <FileCode className="w-3.5 h-3.5" />
                       <span className="font-semibold text-[#252522] truncate">
@@ -363,29 +478,88 @@ export function CodeInspector({
                     </div>
                   </div>
 
+                  {/* Partial / Verified indicator banner */}
+                  {lines.length > 0 && evidence.status === 'partial' && (
+                    <div className="px-6 py-2 bg-[#854d0e]/10 border-b border-[#854d0e]/25 flex items-center gap-2 text-xs text-[#854d0e]">
+                      <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+                      <span>
+                        <strong>Partial Evidence:</strong> Displaying inspected source code from analyzed commit <span className="font-mono">{evidence.commitSha?.slice(0, 7)}</span>. The requirement was not fully verified in this file.
+                      </span>
+                    </div>
+                  )}
+                  {lines.length > 0 && evidence.status === 'demonstrated' && (
+                    <div className="px-6 py-2 bg-[#2e5738]/10 border-b border-[#2e5738]/25 flex items-center gap-2 text-xs text-[#2e5738]">
+                      <Check className="w-3.5 h-3.5 shrink-0" />
+                      <span>
+                        <strong>Verified Excerpt:</strong> Retrieved from analyzed commit <span className="font-mono">{evidence.commitSha?.slice(0, 7)}</span>.
+                      </span>
+                    </div>
+                  )}
+
                   {/* Framed code viewer */}
                   <div className="flex-1 min-h-0 overflow-y-auto p-5 bg-[#E4E5E0] border border-[#A8AB9F] rounded-md">
-                    <div className="border-t border-[#C5B9A5] overflow-x-auto">
-                      <table className="w-full border-collapse text-left">
-                        <tbody>
-                          {lines.map((line, idx) => (
-                            <tr key={idx} className="hover:bg-[#d7d8d0]/50 transition-colors">
-                              <td className="pr-5 text-right align-top select-none text-[#4E4B44] text-[11px] w-9 font-mono bg-[#D9DAD2] font-semibold">
-                                {startLine + idx}
-                              </td>
-                              <td className="whitespace-pre break-all font-mono text-[12px] leading-relaxed text-[#252522]">
-                                {tokenizeLine(line)}
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                    {lines.length === 0 && (
-                      <div className="flex flex-col items-center justify-center h-64 text-center rounded-md border border-dashed border-[#C5B9A5] bg-[#EDE3D2]/40">
-                        <p className="text-xs font-mono text-[#4E4B44]">
-                          No code excerpt available. This requirement was not demonstrated in the analyzed repository scope.
-                        </p>
+                    {lines.length > 0 ? (
+                      <div className="border-t border-[#C5B9A5] overflow-x-auto">
+                        <table className="w-full border-collapse text-left">
+                          <tbody>
+                            {lines.map((line, idx) => (
+                              <tr key={idx} className="hover:bg-[#d7d8d0]/50 transition-colors">
+                                <td className="pr-5 text-right align-top select-none text-[#4E4B44] text-[11px] w-9 font-mono bg-[#D9DAD2] font-semibold">
+                                  {startLine + idx}
+                                </td>
+                                <td className="whitespace-pre break-all font-mono text-[12px] leading-relaxed text-[#252522]">
+                                  {tokenizeLine(line)}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    ) : (
+                      <div className="flex flex-col items-center justify-center h-64 text-center rounded-md border border-dashed border-[#C5B9A5] bg-[#EDE3D2]/40 p-6">
+                        {evidence.sourceRetrievalStatus === 'failed' || evidence.sourceRetrievalError ? (
+                          <div className="flex flex-col items-center gap-2 max-w-md">
+                            <AlertTriangle className="w-6 h-6 text-[#DD604C]" />
+                            <h4 className="text-sm font-semibold text-[#252522]">Source Code Retrieval Failed</h4>
+                            <p className="text-xs text-[#4E4B44] leading-relaxed">
+                              {evidence.sourceRetrievalError || 'Unable to retrieve file contents from repository at the specified commit.'}
+                            </p>
+                            <p className="text-[11px] font-mono text-[#6E6B64]">
+                              Commit: {evidence.commitSha?.slice(0, 7)} • File: {evidence.filePath || 'unknown'}
+                            </p>
+                            <p className="text-[11px] text-[#4E4B44] italic">
+                              No fabricated code or unrelated excerpts are displayed.
+                            </p>
+                          </div>
+                        ) : evidence.status === 'demonstrated' ? (
+                          <div className="flex flex-col items-center gap-2 max-w-md">
+                            <CheckCircle2 className="w-6 h-6 text-[#2e5738]" />
+                            <h4 className="text-sm font-semibold text-[#252522]">Verified Implementation (Excerpt Render Unavailable)</h4>
+                            <p className="text-xs text-[#4E4B44] leading-relaxed">
+                              The requirement implementation was verified in repository tree analysis, but the specific code excerpt could not be rendered.
+                            </p>
+                            <p className="text-[11px] font-mono text-[#6E6B64]">
+                              Confidence score of {evidence.confidence}% is preserved based on verified implementation.
+                            </p>
+                          </div>
+                        ) : (
+                          <div className="flex flex-col items-center gap-2 max-w-md">
+                            <FileCode className="w-6 h-6 text-[#6E6B64]" />
+                            <h4 className="text-sm font-semibold text-[#252522]">No Code Excerpt Available</h4>
+                            <p className="text-xs text-[#4E4B44] leading-relaxed">
+                              This requirement was not demonstrated in the analyzed repository scope (commit <span className="font-mono">{evidence.commitSha?.slice(0, 7)}</span>).
+                            </p>
+                            {evidence.filePath ? (
+                              <p className="text-[11px] text-[#6E6B64]">
+                                Discovered path <span className="font-mono">{evidence.filePath}</span> did not satisfy implementation criteria.
+                              </p>
+                            ) : (
+                              <p className="text-[11px] text-[#6E6B64]">
+                                No corresponding source files were discovered in the repository tree.
+                              </p>
+                            )}
+                          </div>
+                        )}
                       </div>
                     )}
                   </div>
@@ -394,7 +568,7 @@ export function CodeInspector({
             </div>
 
             {/* Bottom action bar */}
-            <footer className="border-t border-[#C5B9A5] p-6 bg-[#EDE3D2] flex items-center gap-2.5 flex-wrap">
+            <footer className="border-t border-[#C5B9A5] p-5 bg-[#EDE3D2] flex items-center gap-2.5 flex-wrap">
               <button
                 onClick={handleCopyCode}
                 disabled={!evidence.codeExcerpt}
@@ -429,7 +603,7 @@ export function CodeInspector({
               )}
               <button
                 onClick={onClose}
-                className="flex items-center gap-2 px-3.5 py-2 rounded border border-[#C5B9A5] bg-[#252522] text-[11px] font-mono font-semibold text-white hover:bg-[#393732] transition-colors focus-visible:ring-2 focus-visible:ring-[#252522]"
+                className="flex items-center gap-2 px-3.5 py-2 rounded border border-[#C5B9A5] bg-[#252522] text-[11px] font-mono font-semibold text-white hover:bg-[#393732] transition-colors focus-visible:ring-2 focus-visible:ring-[#252522] ml-auto"
                 title="Close inspector"
               >
                 <X className="w-3.5 h-3.5" />

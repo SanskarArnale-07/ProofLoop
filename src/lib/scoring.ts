@@ -52,10 +52,202 @@ export const DEFAULT_SCORING_CONFIG: ScoringWeights = {
   }
 };
 
+export interface GroundedConfidenceCriteria {
+  factor: string;
+  impact: number;
+}
+
+export interface DetailedConfidenceResult {
+  confidence: number;
+  explanation: string;
+  criteria: GroundedConfidenceCriteria[];
+  verificationLevel: 'file_discovery' | 'source_inspected' | 'implementation_verified' | 'negative_verification';
+}
+
+/**
+ * Evaluates detailed confidence metrics distinguishing:
+ * 1. File discovery (filename matched in tree only)
+ * 2. Source-code inspection (file content examined at commit)
+ * 3. Implementation verification (concrete handler, schema, assertions verified)
+ * 4. Requirement satisfaction (demonstrated, partial, not_demonstrated)
+ */
+export function evaluateConfidenceDetails(evidence: {
+  evidenceType?: string;
+  evidenceStrength?: string;
+  hasAssertions?: boolean;
+  commitCount?: number;
+  hasDiff?: boolean;
+  treeAnalyzed?: boolean;
+  isInsufficientEvidence?: boolean;
+  sourceRetrievalStatus?: 'retrieved' | 'failed' | 'not_attempted' | 'missing_file';
+  verificationLevel?: 'file_discovery' | 'source_inspected' | 'implementation_verified' | 'negative_verification';
+  isImplementationVerified?: boolean;
+  codeExcerpt?: string;
+  hasVerifiedExcerpt?: boolean;
+}): DetailedConfidenceResult {
+  const {
+    evidenceType,
+    evidenceStrength,
+    hasAssertions,
+    commitCount = 1,
+    hasDiff,
+    treeAnalyzed,
+    isInsufficientEvidence,
+    sourceRetrievalStatus,
+    verificationLevel: explicitLevel,
+    isImplementationVerified: explicitImplVerified,
+    codeExcerpt,
+    hasVerifiedExcerpt
+  } = evidence;
+
+  // 1. Inconclusive / Insufficient evidence
+  if (isInsufficientEvidence) {
+    return {
+      confidence: 25,
+      explanation: 'Inconclusive (25%): repository contains insufficient source files or commit history to evaluate technical implementation.',
+      criteria: [{ factor: 'Empty or inaccessible repository scope', impact: 25 }],
+      verificationLevel: 'file_discovery'
+    };
+  }
+
+  // 2. Negative finding confidence: tree was analyzed and confirmed absence of matching constructs
+  if (evidenceType === 'none' || evidenceStrength === 'none' || explicitLevel === 'negative_verification') {
+    const isTreeAnalyzed = treeAnalyzed !== false && (
+      treeAnalyzed === true ||
+      sourceRetrievalStatus === 'missing_file' ||
+      explicitLevel === 'negative_verification' ||
+      Boolean(commitCount)
+    );
+    const score = isTreeAnalyzed ? 88 : 75;
+    return {
+      confidence: score,
+      explanation: `High confidence in negative finding (${score}%): active tree inspection confirmed no matching files or endpoint implementations exist in the repository.`,
+      criteria: [{ factor: isTreeAnalyzed ? 'Active tree scan confirmed absence of matching files' : 'Repository tree analyzed', impact: score }],
+      verificationLevel: 'negative_verification'
+    };
+  }
+
+  // Determine implementation verification state
+  const hasConcreteExcerpt = Boolean((codeExcerpt && codeExcerpt.trim().length > 0) || hasVerifiedExcerpt);
+  const isImplVerified = explicitImplVerified !== undefined
+    ? explicitImplVerified
+    : explicitLevel === 'implementation_verified'
+      ? true
+      : evidenceStrength === 'strong' && hasConcreteExcerpt;
+
+  // 3. Source retrieval failed without prior verified implementation: cannot verify source
+  if (sourceRetrievalStatus === 'failed' && !isImplVerified) {
+    return {
+      confidence: 25,
+      explanation: 'Low confidence (25%): candidate file discovered in tree metadata, but source-code retrieval failed. An uninspected filename cannot prove implementation.',
+      criteria: [{ factor: 'File path discovered in tree metadata only; source retrieval failed', impact: 25 }],
+      verificationLevel: 'file_discovery'
+    };
+  }
+
+  // 4. File discovery only: filename matched in tree, but no source inspection or verified implementation
+  if (explicitLevel === 'file_discovery' || (!isImplVerified && evidenceStrength === 'weak')) {
+    return {
+      confidence: 25,
+      explanation: 'Low confidence (25%): candidate file matched in tree metadata only. Detecting a filename or directory does not prove implementation.',
+      criteria: [{ factor: 'File path matched in repository tree', impact: 25 }],
+      verificationLevel: 'file_discovery'
+    };
+  }
+
+  // 5. Source code inspected, but implementation unverified (e.g. schemas without route handlers, test scaffolding without assertions)
+  if (!isImplVerified) {
+    let score = 35;
+    const criteria: GroundedConfidenceCriteria[] = [
+      { factor: 'Candidate file inspected at commit; supporting schemas or scaffolding detected', impact: 35 }
+    ];
+
+    if (sourceRetrievalStatus === 'retrieved' || hasConcreteExcerpt) {
+      score += 5;
+      criteria.push({ factor: 'Source code verified and retrieved at analyzed commit', impact: 5 });
+    }
+
+    if (commitCount >= 2) {
+      score += 5;
+      criteria.push({ factor: 'Corroborated across 2+ commits', impact: 5 });
+    }
+
+    // Explicit cap: unverified implementation must never exceed 45% confidence
+    const cappedScore = Math.min(45, score);
+    return {
+      confidence: cappedScore,
+      explanation: `Moderate confidence (${cappedScore}%): source code was inspected at commit; supporting structures detected, but concrete implementation (e.g. HTTP route handlers) remains unverified (capped at 45%). Finding a file does not prove implementation.`,
+      criteria,
+      verificationLevel: 'source_inspected'
+    };
+  }
+
+  // 6. Verified implementation: concrete constructs (endpoints, queries, assertions) verified in source code
+  let base = 70;
+  const criteria: GroundedConfidenceCriteria[] = [];
+
+  switch (evidenceType) {
+    case 'direct_implementation':
+      base = 75;
+      criteria.push({ factor: 'Verified concrete implementation with line-level source excerpt', impact: 75 });
+      break;
+    case 'test_verification':
+      base = 75;
+      criteria.push({ factor: 'Verified executable test suite with assertions', impact: 75 });
+      break;
+    case 'configuration':
+      base = 70;
+      criteria.push({ factor: 'Verified production configuration directives', impact: 70 });
+      break;
+    case 'documentation':
+      base = 65;
+      criteria.push({ factor: 'Verified repository documentation and hygiene', impact: 65 });
+      break;
+    default:
+      base = 70;
+      criteria.push({ factor: 'Verified implementation pattern', impact: 70 });
+  }
+
+  // Corroborations
+  if (hasConcreteExcerpt && sourceRetrievalStatus !== 'failed') {
+    base += 10;
+    criteria.push({ factor: 'Verified source code excerpt retrieved at analyzed commit', impact: 10 });
+  }
+  if (hasAssertions) {
+    base += 10;
+    criteria.push({ factor: 'Automated test assertions present', impact: 10 });
+  }
+  if (commitCount >= 2) {
+    base += 8;
+    criteria.push({ factor: 'Corroborated across multiple commits', impact: 8 });
+  }
+  if (hasDiff && sourceRetrievalStatus !== 'failed') {
+    base += 5;
+    criteria.push({ factor: 'Verified code diff additions', impact: 5 });
+  }
+
+  // If source retrieval failed for an otherwise verified implementation, keep confidence grounded
+  if (sourceRetrievalStatus === 'failed') {
+    criteria.push({ factor: 'Full source excerpt retrieval failed, but implementation verified from commit artifacts', impact: 0 });
+  }
+
+  const finalScore = Math.min(98, Math.max(20, base));
+  const explanation = sourceRetrievalStatus === 'failed'
+    ? `High confidence (${finalScore}%): implementation verified from commit artifacts. Full excerpt retrieval encountered an error, but implementation verification succeeded.`
+    : `High confidence (${finalScore}%): verified concrete implementation with line-level excerpt at analyzed commit, corroborated by repository artifacts.`;
+
+  return {
+    confidence: finalScore,
+    explanation,
+    criteria,
+    verificationLevel: 'implementation_verified'
+  };
+}
+
 /**
  * Calculates a statistically grounded confidence rating (0-100%)
- * based on concrete evidence breadth, test verification, and commit corroboration.
- * Never inflates confidence based on stylistic conventions or AI assistance.
+ * based on explicit, documented, deterministic criteria.
+ * Distinguishes file discovery, source inspection, implementation verification, and requirement satisfaction.
  */
 export function calculateGroundedConfidence(evidence: {
   evidenceType?: string;
@@ -65,55 +257,13 @@ export function calculateGroundedConfidence(evidence: {
   hasDiff?: boolean;
   treeAnalyzed?: boolean;
   isInsufficientEvidence?: boolean;
+  sourceRetrievalStatus?: 'retrieved' | 'failed' | 'not_attempted' | 'missing_file';
+  verificationLevel?: 'file_discovery' | 'source_inspected' | 'implementation_verified' | 'negative_verification';
+  isImplementationVerified?: boolean;
+  codeExcerpt?: string;
+  hasVerifiedExcerpt?: boolean;
 }): number {
-  const {
-    evidenceType,
-    evidenceStrength,
-    hasAssertions,
-    commitCount = 1,
-    hasDiff,
-    treeAnalyzed,
-    isInsufficientEvidence
-  } = evidence;
-
-  // If evidence is insufficient or unavailable (e.g. empty repository or inaccessible file contents),
-  // confidence is intentionally low (25%) because the repository state is inconclusive.
-  if (isInsufficientEvidence) {
-    return 25;
-  }
-
-  // Negative finding confidence: if the tree was actively analyzed and nothing was found,
-  // confidence in the negative finding is high (88%).
-  if (evidenceType === 'none' || evidenceStrength === 'none') {
-    return treeAnalyzed ? 88 : 75;
-  }
-
-  // Base confidence by evidence type
-  let base = 50;
-  switch (evidenceType) {
-    case 'direct_implementation':
-      base = evidenceStrength === 'strong' ? 75 : 60;
-      break;
-    case 'test_verification':
-      base = 75;
-      break;
-    case 'configuration':
-      base = 60;
-      break;
-    case 'dependency_usage':
-      base = 40;
-      break;
-    case 'documentation':
-      base = 30;
-      break;
-  }
-
-  // Corroboration adjustments based on verifiable artifacts
-  if (hasAssertions) base += 10;
-  if (commitCount >= 2) base += 8;
-  if (hasDiff) base += 5;
-
-  return Math.min(98, Math.max(20, base));
+  return evaluateConfidenceDetails(evidence).confidence;
 }
 
 /**
@@ -225,20 +375,31 @@ export function rankEvidenceDeterministically(
       status = 'partial';
     }
 
-    const calculatedConfidence = calculateGroundedConfidence({
+    const hasExcerpt = Boolean(ev.codeExcerpt && ev.codeExcerpt.trim().length > 0);
+    const isImplVerified = ev.verificationLevel === 'implementation_verified' ||
+      (status === 'demonstrated' && ev.evidenceStrength === 'strong' && (hasExcerpt || ev.lineStart !== undefined));
+
+    const detailedConfidence = evaluateConfidenceDetails({
       evidenceType: ev.evidenceType,
       evidenceStrength: ev.evidenceStrength,
       hasAssertions: (ev.testResultsSummary?.assertionsFound || 0) > 0,
       commitCount: ev.relevantCommits?.length || (ev.commitSha ? 1 : 0),
       hasDiff: Boolean(ev.additionsOrPatterns && ev.additionsOrPatterns.length > 0),
       treeAnalyzed: true,
-      isInsufficientEvidence: ev.isInsufficientEvidence
+      isInsufficientEvidence: ev.isInsufficientEvidence,
+      sourceRetrievalStatus: ev.sourceRetrievalStatus,
+      verificationLevel: ev.verificationLevel || (isImplVerified ? 'implementation_verified' : (ev.filePath ? 'source_inspected' : 'file_discovery')),
+      isImplementationVerified: isImplVerified,
+      codeExcerpt: ev.codeExcerpt,
+      hasVerifiedExcerpt: hasExcerpt
     });
 
     return {
       ...ev,
       status,
-      confidence: calculatedConfidence,
+      confidence: detailedConfidence.confidence,
+      confidenceExplanation: ev.confidenceExplanation || detailedConfidence.explanation,
+      verificationLevel: ev.verificationLevel || detailedConfidence.verificationLevel,
       scoreBreakdown: breakdown
     };
   });
