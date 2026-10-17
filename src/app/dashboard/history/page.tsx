@@ -271,6 +271,59 @@ function HistoryContent() {
                     ))}
                   </div>
                 </div>
+
+                {/* Associated Developer Verification Outcomes */}
+                {assessment.verificationSummary?.records && assessment.verificationSummary.records.length > 0 && (
+                  <div className="pt-4 border-t border-zinc-200 dark:border-zinc-800 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <h4 className="text-[11px] uppercase font-bold text-zinc-500">
+                        Associated Developer Verification Outcomes
+                      </h4>
+                      <span className="text-[10px] text-zinc-500">
+                        {assessment.verificationSummary.records.length} verification check(s) recorded
+                      </span>
+                    </div>
+
+                    <div className="space-y-2">
+                      {assessment.verificationSummary.records.map((verif) => (
+                        <div
+                          key={verif.id}
+                          className="p-3 bg-zinc-50 dark:bg-zinc-900/60 border border-zinc-200 dark:border-zinc-800 rounded space-y-1.5"
+                        >
+                          <div className="flex items-center justify-between">
+                            <span className="font-bold text-zinc-900 dark:text-zinc-100 text-xs">
+                              {verif.requirementTitle}
+                            </span>
+                            <span
+                              className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded border ${
+                                verif.status === 'verified_demonstrated'
+                                  ? 'bg-emerald-950/70 text-emerald-400 border-emerald-800'
+                                  : verif.status === 'partial_verification'
+                                    ? 'bg-amber-950/70 text-amber-400 border-amber-800'
+                                    : 'bg-zinc-800 text-zinc-300 border-zinc-700'
+                              }`}
+                            >
+                              {verif.status === 'verified_demonstrated'
+                                ? 'UNDERSTANDING VERIFIED'
+                                : verif.status === 'partial_verification'
+                                  ? 'PARTIAL VERIFICATION'
+                                  : 'NOT YET DEMONSTRATED'}
+                            </span>
+                          </div>
+
+                          <p className="text-zinc-600 dark:text-zinc-400 text-[11px] font-sans">
+                            {verif.overallVerdict}
+                          </p>
+
+                          <div className="flex items-center justify-between text-[10px] text-zinc-500 font-mono pt-1 border-t border-zinc-200/50 dark:border-zinc-800/50">
+                            <span>Condition: {verif.dimensions.verificationIntegrity.environmentIntegrity}</span>
+                            <span>{new Date(verif.createdAt).toLocaleDateString()}</span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
             ) : (
               <div className="p-8 border border-zinc-200 dark:border-zinc-800 rounded text-center text-zinc-400 font-mono text-xs">

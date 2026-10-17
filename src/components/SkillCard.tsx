@@ -1,12 +1,14 @@
 'use client';
 
 import { useSyncExternalStore } from 'react';
-import { FileCode, CheckCircle, AlertCircle, CircleDashed, Paperclip } from 'lucide-react';
-import { RepositoryEvidence } from '@/lib/types';
+import { FileCode, CheckCircle, AlertCircle, CircleDashed, Paperclip, Brain } from 'lucide-react';
+import { RepositoryEvidence, DeveloperVerificationRecord } from '@/lib/types';
 
 interface SkillCardProps {
   evidence: RepositoryEvidence;
   onInspect: (evidence: RepositoryEvidence) => void;
+  verificationRecord?: DeveloperVerificationRecord | null;
+  onVerify?: (evidence: RepositoryEvidence) => void;
   index?: number;
 }
 
@@ -48,7 +50,13 @@ function useMedia(query: string): boolean {
   );
 }
 
-export function SkillCard({ evidence, onInspect, index = 0 }: SkillCardProps) {
+export function SkillCard({
+  evidence,
+  onInspect,
+  verificationRecord,
+  onVerify,
+  index = 0
+}: SkillCardProps) {
   const isDemonstrated = evidence.status === 'demonstrated';
   const isPartial = evidence.status === 'partial';
   const isNotDemonstrated = evidence.status === 'not_demonstrated';
@@ -80,8 +88,8 @@ export function SkillCard({ evidence, onInspect, index = 0 }: SkillCardProps) {
             : '0 1px 2px rgba(0,0,0,0.06), 0 10px 24px -5px rgba(0,0,0,0.12), 0 18px 36px -10px rgba(0,0,0,0.18)',
       }}
     >
-      {/* Top band: category sticker + status stamp side by side */}
-      <div className="flex flex-wrap items-start gap-3 mb-3">
+      {/* Top band: category sticker + status stamp + verification badge side by side */}
+      <div className="flex flex-wrap items-start gap-2.5 mb-3">
         <span
           className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md border text-[10px] font-mono font-bold uppercase tracking-wider leading-none shrink-0"
           style={{
@@ -108,6 +116,31 @@ export function SkillCard({ evidence, onInspect, index = 0 }: SkillCardProps) {
           {isPartial && <CircleDashed className="w-3 h-3 shrink-0 text-[#92400e]" />}
           {isNotDemonstrated && <AlertCircle className="w-3 h-3 shrink-0 text-[#52525b]" />}
           <span>{STATUS_LABELS[evidence.status]}</span>
+        </span>
+
+        {/* Verification Status Badge */}
+        <span
+          className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md border text-[11px] font-mono font-bold uppercase tracking-wider leading-none shrink-0 ${
+            verificationRecord?.status === 'verified_demonstrated'
+              ? 'border-emerald-700/60 text-emerald-800 bg-emerald-100/90'
+              : verificationRecord?.status === 'partial_verification'
+                ? 'border-amber-700/60 text-amber-800 bg-amber-100/90'
+                : 'border-[#584638]/50 text-[#584638] bg-[#584638]/10'
+          }`}
+          title={
+            verificationRecord
+              ? `Verification Condition: ${verificationRecord.dimensions.verificationIntegrity.environmentIntegrity}`
+              : 'Practical understanding not yet verified through a task'
+          }
+        >
+          <Brain className="w-3 h-3 shrink-0" />
+          <span>
+            {verificationRecord?.status === 'verified_demonstrated'
+              ? 'UNDERSTANDING VERIFIED'
+              : verificationRecord?.status === 'partial_verification'
+                ? 'PARTIAL VERIFICATION'
+                : 'NOT YET VERIFIED'}
+          </span>
         </span>
 
         {annotation && (
@@ -185,6 +218,18 @@ export function SkillCard({ evidence, onInspect, index = 0 }: SkillCardProps) {
               Gap Identified
             </span>
           </div>
+        )}
+
+        {onVerify && (
+          <button
+            onClick={() => onVerify(evidence)}
+            className="mt-3 w-full py-2 px-3 rounded-xl border border-[#d5ccba] bg-white hover:bg-[#f4efe2] text-[#2B211B] text-[11px] font-mono font-bold flex items-center justify-center gap-1.5 transition-colors shadow-xs cursor-pointer"
+          >
+            <Brain className="w-3.5 h-3.5 text-[#2B211B]" />
+            <span>
+              {verificationRecord ? 'Review Practical Verification' : 'Verify Understanding'}
+            </span>
+          </button>
         )}
       </div>
     </div>

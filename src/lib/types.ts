@@ -163,7 +163,8 @@ export interface ActivityEvent {
     | 'skill_promoted'
     | 'skill_unchanged'
     | 'webhook_received'
-    | 'reassessment_failed';
+    | 'reassessment_failed'
+    | 'developer_verification_completed';
   title: string;
   description: string;
   commitSha?: string;
@@ -215,6 +216,7 @@ export interface Assessment {
   recentActivity: ActivityEvent[];
   analysisScope?: AnalysisScope;
   aiSignals?: AISignalAnalysisResult;
+  verificationSummary?: AssessmentVerificationSummary;
   createdAt: string;
   updatedAt: string;
 }
@@ -344,5 +346,148 @@ export interface RevisionComparison {
     differences?: string[];
   };
   summary: string;
+}
+
+// ============================================================================
+// Developer Verification Types
+// ============================================================================
+
+export type VerificationAssessmentCondition =
+  | 'ai_restricted_independent'
+  | 'ai_assisted_disclosed'
+  | 'unmonitored_takehome';
+
+export type VerificationVerdict =
+  | 'verified_demonstrated'
+  | 'partial_verification'
+  | 'unverified'
+  | 'not_yet_verified';
+
+export interface PracticalCodeReference {
+  repoFullName: string;
+  filePath: string;
+  lineStart?: number;
+  lineEnd?: number;
+  codeExcerpt: string;
+  functionOrComponentName?: string;
+  commitSha: string;
+}
+
+export interface VerificationTask {
+  id: string;
+  requirementId: string;
+  requirementTitle: string;
+  taskType:
+    | 'edge_case_fix'
+    | 'contract_preservation'
+    | 'type_dataflow_decision'
+    | 'test_addition'
+    | 'defect_diagnosis';
+  title: string;
+  scenario: string;
+  targetCode: PracticalCodeReference;
+  instructions: string;
+  expectedBehavior: string;
+  evaluationCriteria: string[];
+  permittedTools: string;
+  allowedCondition: VerificationAssessmentCondition;
+  isFallbackManual: boolean;
+  limitationNote?: string;
+}
+
+export interface PracticalEvaluationResult {
+  passed: boolean;
+  syntaxValid: boolean;
+  contractPreserved: boolean;
+  testsPassed: number;
+  totalTests: number;
+  checksSummary: string[];
+  strengths: string[];
+  unresolvedGaps: string[];
+  evaluatedAt: string;
+}
+
+export interface AdaptiveReasoningFollowup {
+  id: string;
+  taskId: string;
+  question: string;
+  contextWhyAsked: string;
+  expectedCriteria: string[];
+}
+
+export interface ReasoningEvaluationResult {
+  score: number; // 0 - 100
+  criteriaMet: string[];
+  missingReasoning: string[];
+  unresolvedUncertainty: string[];
+  overallEvaluation: string;
+  evaluatedAt: string;
+}
+
+export interface MultidimensionalVerificationScore {
+  repositoryEvidence: {
+    status: EvidenceStatus;
+    strength: EvidenceStrength;
+    summary: string;
+  };
+  contributionEvidence: {
+    commitFrequency: string;
+    directAuthorship: boolean;
+    attributionCertainty: string;
+  };
+  practicalPerformance: {
+    passed: boolean;
+    contractMaintained: boolean;
+    summary: string;
+  };
+  reasoningEvidence: {
+    depth: 'thorough' | 'adequate' | 'superficial' | 'inadequate';
+    criteriaMetRatio: number; // 0.0 - 1.0
+    summary: string;
+  };
+  verificationIntegrity: {
+    condition: VerificationAssessmentCondition;
+    permittedTools: string;
+    environmentIntegrity: string;
+  };
+  confidenceAndLimitations: {
+    confidenceLevel: 'high' | 'moderate' | 'low';
+    limitations: string[];
+    uncertaintyNotes: string;
+  };
+}
+
+export interface DeveloperVerificationRecord {
+  id: string;
+  assessmentId: string;
+  revisionId?: string;
+  requirementId: string;
+  requirementTitle: string;
+  task: VerificationTask;
+  assessmentCondition: VerificationAssessmentCondition;
+  practicalSolution: string;
+  practicalEvaluation: PracticalEvaluationResult;
+  followupQuestion: AdaptiveReasoningFollowup;
+  reasoningResponse: string;
+  reasoningEvaluation: ReasoningEvaluationResult;
+  dimensions: MultidimensionalVerificationScore;
+  status: VerificationVerdict;
+  overallVerdict: string;
+  confidenceScore: number; // 0 - 100
+  limitations: string[];
+  createdAt: string;
+}
+
+export interface AssessmentVerificationSummary {
+  assessmentId: string;
+  totalRequirements: number;
+  verifiedCount: number;
+  partialCount: number;
+  unverifiedCount: number;
+  notYetVerifiedCount: number;
+  overallStatus: 'all_verified' | 'partially_verified' | 'not_yet_verified';
+  records: DeveloperVerificationRecord[];
+  confidenceSummary: string;
+  limitationsNotice: string;
 }
 

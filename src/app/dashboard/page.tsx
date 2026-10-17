@@ -7,7 +7,15 @@ import { Header } from '@/components/Header';
 import { SkillCard } from '@/components/SkillCard';
 import { CodeInspector } from '@/components/CodeInspector';
 import { WebhookSimulatorModal } from '@/components/WebhookSimulatorModal';
-import { Assessment, RepositoryEvidence, EvidenceStatus } from '@/lib/types';
+import { VerificationSummaryBanner } from '@/components/VerificationSummaryBanner';
+import { SkillVerificationModal } from '@/components/SkillVerificationModal';
+import {
+  Assessment,
+  RepositoryEvidence,
+  EvidenceStatus,
+  InternshipRequirement,
+  DeveloperVerificationRecord
+} from '@/lib/types';
 import {
   ShieldCheck,
   CircleDashed,
@@ -31,6 +39,11 @@ function DashboardContent() {
 
   // Webhook Simulator Modal
   const [simulatorOpen, setSimulatorOpen] = useState(false);
+
+  // Verification Modal State
+  const [verificationModalOpen, setVerificationModalOpen] = useState(false);
+  const [selectedReqForVerification, setSelectedReqForVerification] = useState<InternshipRequirement | null>(null);
+  const [selectedEvidenceForVerification, setSelectedEvidenceForVerification] = useState<RepositoryEvidence | null>(null);
 
   const fetchAssessment = async () => {
     setLoading(true);
@@ -127,11 +140,79 @@ function DashboardContent() {
     setSimulatorOpen(false);
   };
 
+  const handleOpenVerification = (requirementId?: string) => {
+    if (!assessment) return;
+    if (requirementId) {
+      const req = assessment.internship.requirements.find(r => r.id === requirementId);
+      const ev = assessment.latestRevision.evidence.find(e => e.requirementId === requirementId);
+      setSelectedReqForVerification(req || null);
+      setSelectedEvidenceForVerification(ev || null);
+    } else {
+      // Pick first unverified requirement or first requirement
+      const verifiedIds = new Set(
+        assessment.verificationSummary?.records?.map(r => r.requirementId) || []
+      );
+      const unverifiedReq =
+        assessment.internship.requirements.find(r => !verifiedIds.has(r.id)) ||
+        assessment.internship.requirements[0];
+      const ev = unverifiedReq
+        ? assessment.latestRevision.evidence.find(e => e.requirementId === unverifiedReq.id)
+        : null;
+      setSelectedReqForVerification(unverifiedReq || null);
+      setSelectedEvidenceForVerification(ev || null);
+    }
+    setVerificationModalOpen(true);
+  };
+
+  const handleVerificationSuccess = (updatedRecord: DeveloperVerificationRecord) => {
+    if (!assessment) return;
+    const existingRecords = assessment.verificationSummary?.records || [];
+    const filtered = existingRecords.filter(r => r.requirementId !== updatedRecord.requirementId);
+    const updatedRecords = [updatedRecord, ...filtered];
+
+    const total = assessment.internship.requirements.length;
+    let verifiedCount = 0;
+    let partialCount = 0;
+    let unverifiedCount = 0;
+
+    for (const rec of updatedRecords) {
+      if (rec.status === 'verified_demonstrated') verifiedCount++;
+      else if (rec.status === 'partial_verification') partialCount++;
+      else unverifiedCount++;
+    }
+
+    const notYetVerifiedCount = Math.max(0, total - (verifiedCount + partialCount + unverifiedCount));
+
+    setAssessment({
+      ...assessment,
+      verificationSummary: {
+        assessmentId: assessment.id,
+        totalRequirements: total,
+        verifiedCount,
+        partialCount,
+        unverifiedCount,
+        notYetVerifiedCount,
+        overallStatus: verifiedCount === total ? 'all_verified' : 'partially_verified',
+        records: updatedRecords,
+        confidenceSummary: `${verifiedCount} requirement(s) verified through grounded practical tasks and adaptive reasoning.`,
+        limitationsNotice:
+          assessment.verificationSummary?.limitationsNotice ||
+          'Verification assesses practical execution and reasoning under declared conditions.'
+      }
+    });
+  };
+
   return (
     <div className="flex-1 flex flex-col min-w-0">
       <Header assessment={assessment} onReassessed={handleReassessed} />
 
       <div className="p-8 max-w-7xl mx-auto w-full space-y-8">
+        {/* Verification Summary Banner */}
+        <VerificationSummaryBanner
+          summary={assessment.verificationSummary}
+          onVerifyClick={handleOpenVerification}
+        />
+
         {/* Top Readiness Summary Strip */}
         <section className="bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded p-6">
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-6 border-b border-zinc-200 dark:border-zinc-800">
@@ -245,14 +326,21 @@ function DashboardContent() {
 
           {/* List of Skill Cards */}
           <div className="space-y-4">
-            {filteredEvidence.map((ev, index) => (
-              <SkillCard
-                key={ev.requirementId}
-                evidence={ev}
-                onInspect={handleInspect}
-                index={index}
-              />
-            ))}
+            {filteredEvidence.map((ev, index) => {
+              const verifRecord = assessment.verificationSummary?.records?.find(
+                (r) => r.requirementId === ev.requirementId
+              );
+              return (
+                <SkillCard
+                  key={ev.requirementId}
+                  evidence={ev}
+                  onInspect={handleInspect}
+                  verificationRecord={verifRecord}
+                  onVerify={() => handleOpenVerification(ev.requirementId)}
+                  index={index}
+                />
+              );
+            })}
           </div>
         </section>
       </div>
@@ -271,6 +359,22 @@ function DashboardContent() {
           assessment={assessment}
           onClose={() => setSimulatorOpen(false)}
           onSuccess={handleWebhookSuccess}
+        />
+      )}
+
+      {/* Skill Verification Modal */}
+      {verificationModalOpen && selectedReqForVerification && (
+        <SkillVerificationModal
+          assessmentId={assessment.id}
+          requirement={selectedReqForVerification}
+          evidence={selectedEvidenceForVerification}
+          existingRecord={
+            assessment.verificationSummary?.records?.find(
+              (r) => r.requirementId === selectedReqForVerification.id
+            )
+          }
+          onClose={() => setVerificationModalOpen(false)}
+          onSuccess={handleVerificationSuccess}
         />
       )}
     </div>

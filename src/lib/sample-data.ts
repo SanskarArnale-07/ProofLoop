@@ -1,5 +1,5 @@
-import { Assessment, InternshipPosting } from './types';
-import { saveAssessment, getAssessment } from './db';
+import { Assessment, InternshipPosting, DeveloperVerificationRecord } from './types';
+import { saveAssessment, getAssessment, saveDeveloperVerification, getVerificationForRequirement } from './db';
 import { SCORING_RULE_VERSION } from './scoring';
 import { AI_SIGNAL_DISCLAIMER } from './ai-signals';
 
@@ -453,13 +453,180 @@ WIP.`,
   updatedAt: '2026-10-14T10:15:00.000Z'
 };
 
+export const SAMPLE_VERIFICATION_RECORD: DeveloperVerificationRecord = {
+  id: 'verif-sample-req-api',
+  assessmentId: 'sample-assessment-stripe',
+  revisionId: 'rev-sample-1',
+  requirementId: 'req-api',
+  requirementTitle: 'REST API Development & Validation',
+  task: {
+    id: 'task-api-req-api-sample',
+    requirementId: 'req-api',
+    requirementTitle: 'REST API Development & Validation',
+    taskType: 'edge_case_fix',
+    title: 'Enhance Endpoint Validation & Resilience in src/routes/payments.ts',
+    scenario: 'The repository implementation in src/routes/payments.ts processes incoming requests but contains critical edge cases around header validation and unhandled service exceptions.',
+    targetCode: {
+      repoFullName: 'alexchen/payment-orchestrator',
+      filePath: 'src/routes/payments.ts',
+      lineStart: 34,
+      lineEnd: 58,
+      codeExcerpt: `export async function handleCreateCharge(req: Request): Promise<Response> {\n  const idempotencyKey = req.headers.get("Idempotency-Key");\n  ...\n}`,
+      functionOrComponentName: 'handleCreateCharge',
+      commitSha: '9e41b2c'
+    },
+    instructions: 'Modify the function to prevent empty/whitespace Idempotency-Key headers and catch downstream service failures.',
+    expectedBehavior: 'Rejects empty/whitespace keys with 400. Returns structured 500 JSON on service failure.',
+    evaluationCriteria: [
+      'Checks idempotencyKey.trim().length > 0 or rejects whitespace keys with 400',
+      'Includes try/catch or error boundary around chargeService.process returning HTTP 500 JSON',
+      'Preserves existing ChargeRequestSchema.safeParse validation and 422 return contract'
+    ],
+    permittedTools: 'Allowed: Standard IDE, language documentation, TypeScript compiler.',
+    allowedCondition: 'ai_restricted_independent',
+    isFallbackManual: false
+  },
+  assessmentCondition: 'ai_restricted_independent',
+  practicalSolution: `export async function handleCreateCharge(req: Request): Promise<Response> {
+  const rawIdempotencyKey = req.headers.get("Idempotency-Key");
+  const idempotencyKey = rawIdempotencyKey?.trim();
+  if (!idempotencyKey || idempotencyKey.length === 0) {
+    return new Response(JSON.stringify({ error: "Missing or invalid Idempotency-Key header" }), {
+      status: 400,
+      headers: { "Content-Type": "application/json" }
+    });
+  }
+
+  const body = await req.json();
+  const validation = ChargeRequestSchema.safeParse(body);
+  if (!validation.success) {
+    return new Response(JSON.stringify({ error: "Validation failed", details: validation.error.format() }), {
+      status: 422,
+      headers: { "Content-Type": "application/json" }
+    });
+  }
+
+  try {
+    const charge = await chargeService.process({
+      amount: validation.data.amount,
+      currency: validation.data.currency,
+      customerId: validation.data.customerId,
+      idempotencyKey
+    });
+
+    return new Response(JSON.stringify(charge), { status: 201 });
+  } catch (err: unknown) {
+    return new Response(JSON.stringify({ error: "Internal processing error" }), {
+      status: 500,
+      headers: { "Content-Type": "application/json" }
+    });
+  }
+}`,
+  practicalEvaluation: {
+    passed: true,
+    syntaxValid: true,
+    contractPreserved: true,
+    testsPassed: 4,
+    totalTests: 4,
+    checksSummary: [
+      'PASS: Rejects empty and whitespace-only Idempotency-Key.',
+      'PASS: Unhandled service rejection caught.',
+      'PASS: Structured error status code returned.',
+      'PASS: Contract preserved for nominal and 422 validation flows.'
+    ],
+    strengths: [
+      'Defensive check against empty/whitespace Idempotency-Key header verified.',
+      'Error handling boundary around charge service detected.',
+      'Returns structured HTTP 5xx JSON response on unexpected failure.',
+      'Preserved existing Zod schema validation and HTTP status contracts.'
+    ],
+    unresolvedGaps: [],
+    evaluatedAt: '2026-10-14T11:00:00.000Z'
+  },
+  followupQuestion: {
+    id: 'followup-sample-1',
+    taskId: 'task-api-req-api-sample',
+    question:
+      'You trimmed and validated the Idempotency-Key. In a distributed payment infrastructure with network retries, what failure mode occurs if a client reuses an idempotency key with a DIFFERENT request payload, and how should your server handle that discrepancy?',
+    contextWhyAsked:
+      'Validates understanding of idempotency conflict semantics in distributed financial systems.',
+    expectedCriteria: [
+      'Recognizes the risk of payload mismatch on idempotent retry',
+      'Explains how to detect the conflict via payload hash',
+      'Proposes returning an explicit HTTP 409 Conflict'
+    ]
+  },
+  reasoningResponse:
+    'Trimming the idempotency key guards against whitespace bypasses. If a client retries with an identical idempotency key but a modified payload, the server must compute a SHA-256 hash of the request body and compare it with the stored key in Redis. If the payload hash differs, the server must return an HTTP 409 Conflict instead of executing the modified transaction, preventing double charges or fraudulent state transitions.',
+  reasoningEvaluation: {
+    score: 95,
+    criteriaMet: [
+      'Recognizes the risk of payload mismatch on idempotent retry (idempotency key conflict)',
+      'Explains how to detect the conflict (e.g. comparing payload hash stored with idempotency key)',
+      'Proposes returning an explicit HTTP 409 Conflict or 400 Bad Request error rather than silently processing a different charge'
+    ],
+    missingReasoning: [],
+    unresolvedUncertainty: [],
+    overallEvaluation:
+      'Thorough: Candidate demonstrated clear grasp of distributed idempotency semantics and financial ledger invariants.',
+    evaluatedAt: '2026-10-14T11:05:00.000Z'
+  },
+  dimensions: {
+    repositoryEvidence: {
+      status: 'demonstrated',
+      strength: 'strong',
+      summary: 'Demonstrated in src/routes/payments.ts with structured HTTP POST route handler.'
+    },
+    contributionEvidence: {
+      commitFrequency: '2 commits analyzed',
+      directAuthorship: true,
+      attributionCertainty: 'verified'
+    },
+    practicalPerformance: {
+      passed: true,
+      contractMaintained: true,
+      summary: 'Passed 4/4 deterministic contract checks.'
+    },
+    reasoningEvidence: {
+      depth: 'thorough',
+      criteriaMetRatio: 1.0,
+      summary: 'Met 3 reasoning criteria. Thoroughly explained idempotency payload conflict.'
+    },
+    verificationIntegrity: {
+      condition: 'ai_restricted_independent',
+      permittedTools: 'Standard IDE / Documentation (AI Restricted)',
+      environmentIntegrity: 'AI-Restricted (Independent Reasoning)'
+    },
+    confidenceAndLimitations: {
+      confidenceLevel: 'high',
+      limitations: [
+        'Practical assessment evaluates bounded tasks and is not a guarantee of defect-free real-world engineering.'
+      ],
+      uncertaintyNotes: 'No unresolved ambiguities noted in submission.'
+    }
+  },
+  status: 'verified_demonstrated',
+  overallVerdict:
+    'Understanding verified: Implementation correctly preserved contracts and candidate thoroughly justified trade-offs and edge cases.',
+  confidenceScore: 92,
+  limitations: [
+    'Practical assessment evaluates bounded tasks and is not a guarantee of defect-free real-world engineering.'
+  ],
+  createdAt: '2026-10-14T11:05:00.000Z'
+};
+
 export async function ensureSampleDataSeeded(): Promise<void> {
   try {
     const existing = await getAssessment(SAMPLE_ASSESSMENT.id);
     if (!existing) {
       await saveAssessment(SAMPLE_ASSESSMENT);
     }
+    const existingVerif = await getVerificationForRequirement(SAMPLE_ASSESSMENT.id, 'req-api');
+    if (!existingVerif) {
+      await saveDeveloperVerification(SAMPLE_VERIFICATION_RECORD);
+    }
   } catch (err) {
     console.warn('Could not seed sample data into PostgreSQL DB:', err instanceof Error ? err.message : err);
   }
 }
+

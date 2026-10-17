@@ -10,7 +10,11 @@ import {
   RevisionComparison,
   EvaluationSummary,
   AnalysisScope,
-  AISignalAnalysisResult
+  AISignalAnalysisResult,
+  DeveloperVerificationRecord,
+  AssessmentVerificationSummary,
+  VerificationVerdict,
+  InternshipRequirement
 } from './types';
 import { SCORING_RULE_VERSION } from './scoring';
 
@@ -531,6 +535,13 @@ export async function getAssessment(
     aiSignals = latestRevision.aiSignals;
   }
 
+  let verificationSummary: AssessmentVerificationSummary | undefined;
+  try {
+    verificationSummary = await getAssessmentVerificationSummary(row.id, internship.requirements, client);
+  } catch {
+    // Graceful fallback if verification tables are not yet queried
+  }
+
   return {
     id: row.id,
     internship,
@@ -548,6 +559,7 @@ export async function getAssessment(
     recentActivity,
     analysisScope,
     aiSignals,
+    verificationSummary,
     createdAt: row.created_at,
     updatedAt: row.updated_at
   };
@@ -1102,4 +1114,252 @@ export async function listWebhookDeliveries(limit: number = 20): Promise<Webhook
     affectedRequirements: r.affected_requirements_json ? JSON.parse(r.affected_requirements_json as string) : [],
     createdAt: r.created_at as string
   }));
+}
+
+// ============================================================================
+// Developer Verification Operations
+// ============================================================================
+
+export async function ensureDeveloperVerificationsTable(
+  client?: PoolClient | Pool
+): Promise<void> {
+  const runner = client || getPool();
+  await runner.query(`
+    CREATE TABLE IF NOT EXISTS developer_verifications (
+      id TEXT PRIMARY KEY,
+      assessment_id TEXT NOT NULL REFERENCES assessments(id) ON DELETE CASCADE,
+      revision_id TEXT REFERENCES revisions(id) ON DELETE SET NULL,
+      requirement_id TEXT NOT NULL,
+      requirement_title TEXT NOT NULL,
+      task_id TEXT NOT NULL,
+      task_title TEXT NOT NULL,
+      task_type TEXT NOT NULL,
+      code_reference_json TEXT NOT NULL,
+      assessment_conditions_json TEXT NOT NULL,
+      practical_solution TEXT NOT NULL,
+      practical_evaluation_json TEXT NOT NULL,
+      followup_question TEXT NOT NULL,
+      reasoning_response TEXT NOT NULL,
+      reasoning_evaluation_json TEXT NOT NULL,
+      dimensions_json TEXT NOT NULL,
+      status TEXT NOT NULL,
+      overall_verdict TEXT NOT NULL,
+      confidence_score INTEGER NOT NULL,
+      limitations_json TEXT NOT NULL,
+      created_at TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_verifications_assessment_id ON developer_verifications(assessment_id);
+    CREATE INDEX IF NOT EXISTS idx_verifications_requirement_id ON developer_verifications(assessment_id, requirement_id);
+    CREATE INDEX IF NOT EXISTS idx_verifications_created_at ON developer_verifications(created_at DESC);
+  `);
+}
+
+function mapVerificationRow(row: Record<string, unknown>): DeveloperVerificationRecord {
+  const codeRef = row.code_reference_json ? JSON.parse(row.code_reference_json as string) : {};
+  const cond = row.assessment_conditions_json ? JSON.parse(row.assessment_conditions_json as string) : {};
+  const practicalEval = row.practical_evaluation_json ? JSON.parse(row.practical_evaluation_json as string) : {};
+  const followupQ = row.followup_question ? JSON.parse(row.followup_question as string) : {};
+  const reasoningEval = row.reasoning_evaluation_json ? JSON.parse(row.reasoning_evaluation_json as string) : {};
+  const dimensions = row.dimensions_json ? JSON.parse(row.dimensions_json as string) : {};
+  const limitations = row.limitations_json ? JSON.parse(row.limitations_json as string) : [];
+
+  return {
+    id: row.id as string,
+    assessmentId: row.assessment_id as string,
+    revisionId: (row.revision_id as string) || undefined,
+    requirementId: row.requirement_id as string,
+    requirementTitle: row.requirement_title as string,
+    task: {
+      id: row.task_id as string,
+      requirementId: row.requirement_id as string,
+      requirementTitle: row.requirement_title as string,
+      taskType: (row.task_type as any) || 'edge_case_fix',
+      title: row.task_title as string,
+      scenario: '',
+      targetCode: codeRef,
+      instructions: '',
+      expectedBehavior: '',
+      evaluationCriteria: [],
+      permittedTools: cond.permittedTools || 'Standard Tools',
+      allowedCondition: cond.condition || 'ai_restricted_independent',
+      isFallbackManual: false
+    },
+    assessmentCondition: cond.condition || 'ai_restricted_independent',
+    practicalSolution: (row.practical_solution as string) || '',
+    practicalEvaluation: practicalEval,
+    followupQuestion: followupQ,
+    reasoningResponse: (row.reasoning_response as string) || '',
+    reasoningEvaluation: reasoningEval,
+    dimensions,
+    status: (row.status as VerificationVerdict) || 'unverified',
+    overallVerdict: (row.overall_verdict as string) || '',
+    confidenceScore: Number(row.confidence_score) || 0,
+    limitations,
+    createdAt: row.created_at as string
+  };
+}
+
+export async function saveDeveloperVerification(
+  record: DeveloperVerificationRecord,
+  client?: PoolClient
+): Promise<void> {
+  const runner = client || getPool();
+  await ensureDeveloperVerificationsTable(runner);
+
+  const stmt = `
+    INSERT INTO developer_verifications (
+      id, assessment_id, revision_id, requirement_id, requirement_title,
+      task_id, task_title, task_type, code_reference_json,
+      assessment_conditions_json, practical_solution, practical_evaluation_json,
+      followup_question, reasoning_response, reasoning_evaluation_json,
+      dimensions_json, status, overall_verdict, confidence_score,
+      limitations_json, created_at
+    )
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21)
+    ON CONFLICT (id) DO UPDATE SET
+      assessment_id = EXCLUDED.assessment_id,
+      revision_id = EXCLUDED.revision_id,
+      requirement_id = EXCLUDED.requirement_id,
+      requirement_title = EXCLUDED.requirement_title,
+      task_id = EXCLUDED.task_id,
+      task_title = EXCLUDED.task_title,
+      task_type = EXCLUDED.task_type,
+      code_reference_json = EXCLUDED.code_reference_json,
+      assessment_conditions_json = EXCLUDED.assessment_conditions_json,
+      practical_solution = EXCLUDED.practical_solution,
+      practical_evaluation_json = EXCLUDED.practical_evaluation_json,
+      followup_question = EXCLUDED.followup_question,
+      reasoning_response = EXCLUDED.reasoning_response,
+      reasoning_evaluation_json = EXCLUDED.reasoning_evaluation_json,
+      dimensions_json = EXCLUDED.dimensions_json,
+      status = EXCLUDED.status,
+      overall_verdict = EXCLUDED.overall_verdict,
+      confidence_score = EXCLUDED.confidence_score,
+      limitations_json = EXCLUDED.limitations_json,
+      created_at = EXCLUDED.created_at;
+  `;
+
+  await runner.query(stmt, [
+    record.id,
+    record.assessmentId,
+    record.revisionId || null,
+    record.requirementId,
+    record.requirementTitle,
+    record.task.id,
+    record.task.title,
+    record.task.taskType,
+    JSON.stringify(record.task.targetCode || {}),
+    JSON.stringify({
+      condition: record.assessmentCondition,
+      permittedTools: record.task.permittedTools
+    }),
+    record.practicalSolution,
+    JSON.stringify(record.practicalEvaluation),
+    JSON.stringify(record.followupQuestion),
+    record.reasoningResponse,
+    JSON.stringify(record.reasoningEvaluation),
+    JSON.stringify(record.dimensions),
+    record.status,
+    record.overallVerdict,
+    record.confidenceScore,
+    JSON.stringify(record.limitations),
+    record.createdAt
+  ]);
+}
+
+export async function getDeveloperVerifications(
+  assessmentId: string,
+  client?: PoolClient
+): Promise<DeveloperVerificationRecord[]> {
+  const runner = client || getPool();
+  await ensureDeveloperVerificationsTable(runner);
+
+  const res = await runner.query(
+    'SELECT * FROM developer_verifications WHERE assessment_id = $1 ORDER BY created_at DESC',
+    [assessmentId]
+  );
+
+  return res.rows.map(mapVerificationRow);
+}
+
+export async function getVerificationForRequirement(
+  assessmentId: string,
+  requirementId: string,
+  client?: PoolClient
+): Promise<DeveloperVerificationRecord | null> {
+  const runner = client || getPool();
+  await ensureDeveloperVerificationsTable(runner);
+
+  const res = await runner.query(
+    'SELECT * FROM developer_verifications WHERE assessment_id = $1 AND requirement_id = $2 ORDER BY created_at DESC LIMIT 1',
+    [assessmentId, requirementId]
+  );
+
+  if (res.rows.length === 0) return null;
+  return mapVerificationRow(res.rows[0]);
+}
+
+export async function getAssessmentVerificationSummary(
+  assessmentId: string,
+  requirements?: InternshipRequirement[],
+  client?: PoolClient
+): Promise<AssessmentVerificationSummary> {
+  const runner = client || getPool();
+  await ensureDeveloperVerificationsTable(runner);
+
+  const res = await runner.query(
+    'SELECT * FROM developer_verifications WHERE assessment_id = $1 ORDER BY created_at DESC',
+    [assessmentId]
+  );
+
+  const records = res.rows.map(mapVerificationRow);
+
+  // Group latest record by requirementId
+  const latestByReq = new Map<string, DeveloperVerificationRecord>();
+  for (const rec of records) {
+    if (!latestByReq.has(rec.requirementId)) {
+      latestByReq.set(rec.requirementId, rec);
+    }
+  }
+
+  const total = requirements && requirements.length > 0 ? requirements.length : latestByReq.size;
+  let verifiedCount = 0;
+  let partialCount = 0;
+  let unverifiedCount = 0;
+
+  for (const rec of latestByReq.values()) {
+    if (rec.status === 'verified_demonstrated') {
+      verifiedCount++;
+    } else if (rec.status === 'partial_verification') {
+      partialCount++;
+    } else {
+      unverifiedCount++;
+    }
+  }
+
+  const notYetVerifiedCount = Math.max(0, total - (verifiedCount + partialCount + unverifiedCount));
+
+  let overallStatus: AssessmentVerificationSummary['overallStatus'] = 'not_yet_verified';
+  if (verifiedCount === total && total > 0) {
+    overallStatus = 'all_verified';
+  } else if (verifiedCount > 0 || partialCount > 0 || unverifiedCount > 0) {
+    overallStatus = 'partially_verified';
+  }
+
+  return {
+    assessmentId,
+    totalRequirements: total,
+    verifiedCount,
+    partialCount,
+    unverifiedCount,
+    notYetVerifiedCount,
+    overallStatus,
+    records,
+    confidenceSummary:
+      verifiedCount > 0
+        ? `${verifiedCount} requirement(s) verified through grounded practical tasks and adaptive reasoning.`
+        : 'No practical verification checks have been completed yet. Repository evidence only.',
+    limitationsNotice:
+      'Verification assesses practical execution and reasoning under declared conditions. It does not claim 100% cheat detection or substitute for complete software lifecycle performance.'
+  };
 }
