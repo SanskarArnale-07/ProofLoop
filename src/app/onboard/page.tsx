@@ -34,6 +34,8 @@ interface VerifiedRepoDetails {
   defaultBranch?: string;
   latestCommitSha?: string;
   latestCommitMessage?: string;
+  url?: string;
+  html_url?: string;
   [key: string]: unknown;
 }
 
@@ -45,6 +47,7 @@ interface VerifiedRepoDetails {
 
   // Step 3: Analysis Transition
   const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [analysisStage, setAnalysisStage] = useState(1);
   const [analysisError, setAnalysisError] = useState<string | null>(null);
 
@@ -141,42 +144,81 @@ interface VerifiedRepoDetails {
     }
   };
 
+  const handleBackToStep3 = () => {
+    setIsAnalyzing(false);
+    setAnalysisError(null);
+    setStep(3);
+  };
+
   const handleStartAnalysis = async () => {
+    if (isSubmitting || (isAnalyzing && !analysisError)) return;
     if (!internshipData || !repoDetails) return;
 
+    setIsSubmitting(true);
     setIsAnalyzing(true);
     setAnalysisStage(1);
     setAnalysisError(null);
 
+    const stage2Timer = setTimeout(() => {
+      setAnalysisStage(prev => (prev === 1 ? 2 : prev));
+    }, 1200);
+
     try {
-      // Transition step 1
-      setTimeout(() => setAnalysisStage(2), 1200);
+      const targetRepoUrl =
+        (typeof repoDetails.url === 'string' && repoDetails.url.trim()) ||
+        (typeof repoDetails.html_url === 'string' && repoDetails.html_url.trim()) ||
+        repoInput.trim();
 
       const res = await fetch('/api/assessments', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           internship: internshipData,
-          repoUrl: repoDetails.url
+          repoUrl: targetRepoUrl
         })
       });
 
+      let data: any = null;
+      const text = await res.text();
+      try {
+        data = text ? JSON.parse(text) : null;
+      } catch {
+        data = null;
+      }
+
+      if (!res.ok) {
+        clearTimeout(stage2Timer);
+        const errMsg =
+          data?.error ||
+          data?.message ||
+          (text && text.length < 300 ? text : `Server returned HTTP ${res.status}: ${res.statusText || 'Analysis request failed'}`);
+        setAnalysisError(errMsg);
+        return;
+      }
+
+      if (!data || !data.success || !data.assessmentId || typeof data.assessmentId !== 'string') {
+        clearTimeout(stage2Timer);
+        const errMsg = data?.error || 'Server response did not include a valid assessment ID.';
+        setAnalysisError(errMsg);
+        return;
+      }
+
+      clearTimeout(stage2Timer);
       setAnalysisStage(3);
 
-      const data = await res.json();
-      if (!res.ok || !data.success) {
-        setAnalysisError(data.error || 'Analysis failed.');
-        setIsAnalyzing(false);
-      } else {
-        // Complete transition and navigate to dashboard
-        setTimeout(() => {
-          router.push(`/dashboard?id=${data.assessmentId}`);
-        }, 1500);
-      }
+      const targetId = encodeURIComponent(data.assessmentId.trim());
+      setTimeout(() => {
+        router.push(`/dashboard?id=${targetId}`);
+      }, 800);
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : 'Unexpected failure during repository analysis.';
+      clearTimeout(stage2Timer);
+      const message =
+        err instanceof Error
+          ? err.message
+          : 'Unexpected network failure or timeout during repository analysis.';
       setAnalysisError(message);
-      setIsAnalyzing(false);
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -187,6 +229,7 @@ interface VerifiedRepoDetails {
           currentStage={analysisStage}
           error={analysisError}
           onRetry={handleStartAnalysis}
+          onBack={handleBackToStep3}
         />
       </div>
     );
@@ -538,6 +581,22 @@ interface VerifiedRepoDetails {
               </div>
             </div>
 
+            {analysisError && (
+              <div className="p-4 bg-red-50 dark:bg-red-950/40 border border-red-300 dark:border-red-800 rounded flex items-center justify-between text-xs text-red-800 dark:text-red-200">
+                <div className="flex items-center space-x-2">
+                  <AlertCircle className="w-4 h-4 text-red-600 dark:text-red-400 shrink-0" />
+                  <span>Previous attempt failed: {analysisError}</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setAnalysisError(null)}
+                  className="text-[10px] uppercase font-bold text-zinc-500 hover:text-black dark:hover:text-white"
+                >
+                  Dismiss
+                </button>
+              </div>
+            )}
+
             {/* Run Button */}
             <div className="pt-4 flex items-center justify-between border-t border-zinc-200 dark:border-zinc-800">
               <span className="text-xs text-zinc-500 font-sans">
@@ -546,11 +605,12 @@ interface VerifiedRepoDetails {
 
               <button
                 type="button"
+                disabled={isSubmitting || isAnalyzing}
                 onClick={handleStartAnalysis}
-                className="px-8 py-3.5 bg-black hover:bg-zinc-800 text-white dark:bg-white dark:hover:bg-zinc-200 dark:text-black font-mono text-xs font-bold rounded flex items-center space-x-2 shadow-md transition-all"
+                className="px-8 py-3.5 bg-black hover:bg-zinc-800 text-white dark:bg-white dark:hover:bg-zinc-200 dark:text-black font-mono text-xs font-bold rounded flex items-center space-x-2 shadow-md transition-all disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 <Sparkles className="w-4 h-4" />
-                <span>Start Evidence Assessment</span>
+                <span>{isSubmitting || isAnalyzing ? 'Starting Assessment...' : 'Start Evidence Assessment'}</span>
               </button>
             </div>
           </div>

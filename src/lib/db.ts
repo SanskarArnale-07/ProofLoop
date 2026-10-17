@@ -23,7 +23,19 @@ export function getDatabase(): DatabaseSync {
     return dbInstance;
   }
 
-  const dataDir = path.join(process.cwd(), 'data');
+  let dataDir = path.join(process.cwd(), 'data');
+  if (process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME) {
+    dataDir = path.join('/tmp', 'proofloop-data');
+  } else {
+    try {
+      if (!fs.existsSync(dataDir)) {
+        fs.mkdirSync(dataDir, { recursive: true });
+      }
+    } catch {
+      dataDir = path.join('/tmp', 'proofloop-data');
+    }
+  }
+
   if (!fs.existsSync(dataDir)) {
     fs.mkdirSync(dataDir, { recursive: true });
   }

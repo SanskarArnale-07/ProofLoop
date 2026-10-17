@@ -11,9 +11,10 @@ interface AnalysisTransitionProps {
   currentStage: number; // 1, 2, 3
   error?: string | null;
   onRetry?: () => void;
+  onBack?: () => void;
 }
 
-export function AnalysisTransition({ currentStage, error, onRetry }: AnalysisTransitionProps) {
+export function AnalysisTransition({ currentStage, error, onRetry, onBack }: AnalysisTransitionProps) {
   const stages: Stage[] = [
     {
       title: '1. Extracting Internship Requirements',
@@ -51,14 +52,26 @@ export function AnalysisTransition({ currentStage, error, onRetry }: AnalysisTra
           <p className="text-xs font-mono text-zinc-800 dark:text-zinc-200 leading-relaxed">
             {error}
           </p>
-          {onRetry && (
-            <button
-              onClick={onRetry}
-              className="px-4 py-2 bg-black text-white dark:bg-white dark:text-black text-xs font-mono rounded font-medium hover:opacity-90 transition-opacity"
-            >
-              Retry Analysis
-            </button>
-          )}
+          <div className="flex flex-wrap items-center justify-center gap-3 pt-2">
+            {onRetry && (
+              <button
+                type="button"
+                onClick={onRetry}
+                className="px-4 py-2 bg-black text-white dark:bg-white dark:text-black text-xs font-mono rounded font-medium hover:opacity-90 transition-opacity"
+              >
+                Retry Analysis
+              </button>
+            )}
+            {onBack && (
+              <button
+                type="button"
+                onClick={onBack}
+                className="px-4 py-2 bg-transparent border border-zinc-400 dark:border-zinc-600 text-zinc-800 dark:text-zinc-200 text-xs font-mono rounded font-medium hover:bg-zinc-200 dark:hover:bg-zinc-800 transition-colors"
+              >
+                Back to Scope Review
+              </button>
+            )}
+          </div>
         </div>
       ) : (
         /* Progress stages */

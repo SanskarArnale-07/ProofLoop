@@ -18,9 +18,11 @@ export async function GET() {
 }
 
 export async function POST(req: NextRequest) {
+  const startTime = Date.now();
   try {
     const body = await req.json().catch(() => null);
     if (!body || typeof body !== 'object') {
+      console.warn('[Assessment Creation] Rejected request: Invalid JSON body');
       return NextResponse.json({ error: 'Invalid JSON request payload' }, { status: 400 });
     }
 
@@ -31,6 +33,7 @@ export async function POST(req: NextRequest) {
     };
 
     if (!internship || typeof internship !== 'object') {
+      console.warn('[Assessment Creation] Rejected request: Missing or invalid internship object');
       return NextResponse.json(
         { error: 'Valid internship posting with requirements is required.' },
         { status: 400 }
@@ -39,6 +42,7 @@ export async function POST(req: NextRequest) {
 
     const posting = internship as Record<string, unknown>;
     if (!posting.requirements || !Array.isArray(posting.requirements) || posting.requirements.length === 0) {
+      console.warn('[Assessment Creation] Rejected request: Empty requirements array');
       return NextResponse.json(
         { error: 'Valid internship posting with requirements is required.' },
         { status: 400 }
@@ -46,6 +50,7 @@ export async function POST(req: NextRequest) {
     }
 
     if (!repoUrl || typeof repoUrl !== 'string' || !repoUrl.trim()) {
+      console.warn('[Assessment Creation] Rejected request: Missing repoUrl');
       return NextResponse.json(
         { error: 'Repository URL is required.' },
         { status: 400 }
@@ -58,21 +63,29 @@ export async function POST(req: NextRequest) {
 
     const parsed = parseGitHubRepoUrl(repoUrl.trim());
     if (!parsed) {
+      console.warn(`[Assessment Creation] Rejected request: Could not parse repo URL "${repoUrl}"`);
       return NextResponse.json(
         { error: 'Invalid GitHub repository format. Expected: https://github.com/owner/repo or owner/repo' },
         { status: 400 }
       );
     }
 
+    console.log(`[Assessment Creation] Starting assessment: repo=${parsed.owner}/${parsed.repo}, requirementsCount=${posting.requirements.length}, hasAuthToken=${Boolean(authToken)}`);
+
     // 1. Fetch Repository Details
+    const tDetails = Date.now();
     const repoInfo = await fetchRepoDetails(parsed.owner, parsed.repo, authToken);
+    console.log(`[Assessment Creation] Fetched repo details in ${Date.now() - tDetails}ms: defaultBranch="${repoInfo.defaultBranch}", commit=${repoInfo.latestCommitSha}, isPrivate=${repoInfo.isPrivate}`);
 
     // 2. Fetch Commits (multi-commit history)
     let commits = [];
+    const tCommits = Date.now();
     try {
       commits = await fetchRepoCommits(parsed.owner, parsed.repo, repoInfo.defaultBranch, 25, authToken);
-    } catch (err) {
-      console.warn('Could not fetch commit history, proceeding with default commit info:', err);
+      console.log(`[Assessment Creation] Fetched ${commits.length} commits in ${Date.now() - tCommits}ms`);
+    } catch (err: unknown) {
+      const errMsg = err instanceof Error ? err.message : String(err);
+      console.warn(`[Assessment Creation] Could not fetch commit history (${errMsg}), proceeding with default commit info`);
       commits = [
         {
           sha: repoInfo.latestCommitSha,
@@ -85,9 +98,13 @@ export async function POST(req: NextRequest) {
     }
 
     // 3. Fetch File Tree
+    const tTree = Date.now();
     const fileTree = await fetchRepoTree(parsed.owner, parsed.repo, repoInfo.defaultBranch, authToken);
+    console.log(`[Assessment Creation] Fetched tree with ${fileTree.length} files in ${Date.now() - tTree}ms`);
 
     // 4. Run Evidence-Based Analysis with Deterministic Ranking & AI Signal Analysis
+    const tAnalysis = Date.now();
+    console.log(`[Assessment Creation] Analyzing repository against ${posting.requirements.length} requirements...`);
     const analysis = await analyzeRepositoryAgainstRequirements(
       {
         owner: parsed.owner,
@@ -101,12 +118,13 @@ export async function POST(req: NextRequest) {
       (internship as InternshipPosting).requirements
     );
 
-    const assessmentId = `assess-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
-    const now = new Date().toISOString();
-
     const demonstratedCount = analysis.evidenceList.filter(e => e.status === 'demonstrated').length;
     const partialCount = analysis.evidenceList.filter(e => e.status === 'partial').length;
     const notDemonstratedCount = analysis.evidenceList.filter(e => e.status === 'not_demonstrated').length;
+    console.log(`[Assessment Creation] Analysis completed in ${Date.now() - tAnalysis}ms: demonstrated=${demonstratedCount}, partial=${partialCount}, notDemonstrated=${notDemonstratedCount}, tasks=${analysis.tasks.length}`);
+
+    const assessmentId = `assess-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
+    const now = new Date().toISOString();
 
     const initialRevision: AssessmentRevision = {
       id: `rev-${assessmentId}-1`,
@@ -157,8 +175,10 @@ export async function POST(req: NextRequest) {
       updatedAt: now
     };
 
-    // Save to SQLite database
+    // 5. Save to database
+    const tPersist = Date.now();
     saveAssessment(assessment);
+    console.log(`[Assessment Creation] Persisted assessment "${assessmentId}" in ${Date.now() - tPersist}ms. Total request duration: ${Date.now() - startTime}ms`);
 
     return NextResponse.json({
       success: true,
@@ -167,7 +187,17 @@ export async function POST(req: NextRequest) {
     }, { status: 201 });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Internal server error during assessment';
-    console.error('Assessment creation error:', error);
-    return NextResponse.json({ error: message }, { status: 500 });
+    console.error(`[Assessment Creation] Failed after ${Date.now() - startTime}ms:`, message);
+
+    let status = 500;
+    if (message.includes('rate limit exceeded') || message.includes('API rate limit')) {
+      status = 429;
+    } else if (message.includes('not found') || message.includes('is private without authorized')) {
+      status = 404;
+    } else if (message.includes('Invalid') || message.includes('required')) {
+      status = 400;
+    }
+
+    return NextResponse.json({ error: message }, { status });
   }
 }
