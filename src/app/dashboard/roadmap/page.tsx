@@ -8,7 +8,7 @@ import { RoadmapCard } from '@/components/RoadmapCard';
 import { AIGapCoachCard } from '@/components/AIGapCoachCard';
 import { WebhookSimulatorModal } from '@/components/WebhookSimulatorModal';
 import { Assessment, GapTask } from '@/lib/types';
-import { Compass, CheckCircle2, Sparkles } from 'lucide-react';
+import { CheckCircle2 } from 'lucide-react';
 
 function RoadmapContent() {
   const searchParams = useSearchParams();

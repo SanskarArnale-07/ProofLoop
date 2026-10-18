@@ -1,5 +1,4 @@
 import {
-  InternshipRequirement,
   RepositoryEvidence,
   Assessment,
   AssessmentRevision,
@@ -9,9 +8,7 @@ import {
 } from './types';
 import { SCORING_RULE_VERSION, rankEvidenceDeterministically } from './scoring';
 import {
-  fetchFileContent,
   fetchRepoTree,
-  redactSensitiveContent,
   GitHubFileNode
 } from './github';
 import { evaluateRepositoryCore, createGapTask } from './analyzer';

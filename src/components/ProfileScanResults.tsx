@@ -10,8 +10,7 @@ import {
   ChevronDown,
   ChevronUp,
   Sparkles,
-  ArrowRight,
-  Search
+  ArrowRight
 } from 'lucide-react';
 import { ProfileScanRecord, RepositoryEvidence } from '@/lib/types';
 

@@ -8,8 +8,7 @@ const {
   parseGitHubUsername,
   verifyCodeExcerptInContent,
   buildRuleBasedRoleSuggestions,
-  createRoleSuggestionValidator,
-  suggestRolesFromVerifiedEvidence
+  createRoleSuggestionValidator
 } = jiti('../src/lib/profile-scanner.ts');
 
 const {

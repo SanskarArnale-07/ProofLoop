@@ -34,7 +34,10 @@ export async function GET(
         migrationNeeded: false
       });
     } catch (dbErr: unknown) {
-      if (isTableNotFoundError(dbErr) || (dbErr as any)?.code === 'MIGRATION_NEEDED') {
+      const isMigrationNeeded =
+        isTableNotFoundError(dbErr) ||
+        (dbErr instanceof Error && 'code' in dbErr && (dbErr as Error & { code?: string }).code === 'MIGRATION_NEEDED');
+      if (isMigrationNeeded) {
         return NextResponse.json({
           success: true,
           report: null,

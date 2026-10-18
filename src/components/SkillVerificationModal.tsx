@@ -13,16 +13,12 @@ import {
 import {
   X,
   Brain,
-  Code,
   CheckCircle2,
   AlertCircle,
   FileCode,
-  ShieldCheck,
   Sparkles,
   ArrowRight,
-  ArrowLeft,
-  Info,
-  HelpCircle
+  ArrowLeft
 } from 'lucide-react';
 
 interface SkillVerificationModalProps {
@@ -37,7 +33,6 @@ interface SkillVerificationModalProps {
 export function SkillVerificationModal({
   assessmentId,
   requirement,
-  evidence,
   existingRecord,
   onClose,
   onSuccess
@@ -96,8 +91,8 @@ export function SkillVerificationModal({
             setTaskError(data.error || 'Failed to generate practical task.');
           } else {
             setTask(data.task);
-            if (!solutionCode && data.task?.targetCode?.codeExcerpt) {
-              setSolutionCode(data.task.targetCode.codeExcerpt);
+            if (data.task?.targetCode?.codeExcerpt) {
+              setSolutionCode((prev) => prev || data.task.targetCode.codeExcerpt);
             }
           }
         }

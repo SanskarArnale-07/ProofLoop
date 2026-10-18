@@ -573,5 +573,51 @@ export interface ProfileScanRecord {
   updatedAt: string;
 }
 
+// ============================================================================
+// Agentic Evidence Investigator Types
+// ============================================================================
+
+export type InvestigationClassification = 'supported' | 'partial' | 'missing' | 'uncertain';
+
+export interface InvestigationEvidenceItem {
+  filePath: string;
+  lineStart?: number;
+  lineEnd?: number;
+  excerpt?: string;
+}
+
+export interface InvestigationToolCall {
+  toolName: string;
+  arguments?: Record<string, unknown>;
+  resultSnippet?: string;
+  iteration?: number;
+}
+
+export interface InvestigationFinding {
+  requirementId: string;
+  requirementTitle: string;
+  classification: InvestigationClassification;
+  evidence: InvestigationEvidenceItem[];
+  reasoning: string;
+  uncertainty?: string;
+  verificationTask?: string;
+}
+
+export interface InvestigationReport {
+  id: string;
+  assessmentId: string;
+  revisionId: string;
+  commitSha: string;
+  repoFullName: string;
+  summary: string;
+  findings: InvestigationFinding[];
+  toolsUsed: InvestigationToolCall[];
+  iterationsCount: number;
+  limitations: string[];
+  providerModel: string;
+  createdAt: string;
+}
+
+
 
 

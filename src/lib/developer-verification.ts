@@ -2,13 +2,11 @@ import {
   RepositoryEvidence,
   InternshipRequirement,
   VerificationTask,
-  PracticalCodeReference,
   VerificationAssessmentCondition,
   PracticalEvaluationResult,
   AdaptiveReasoningFollowup,
   ReasoningEvaluationResult,
   MultidimensionalVerificationScore,
-  DeveloperVerificationRecord,
   VerificationVerdict,
   AuthorAttribution
 } from './types';
@@ -799,12 +797,7 @@ export function computeMultidimensionalScore(
   const commitCount = repoEvidence?.relevantCommits?.length || 0;
   const directAuthor = authorAttribution ? authorAttribution.isDirectAuthor : true;
   const attrCertainty = authorAttribution ? authorAttribution.attributionCertainty : 'probable';
-  const contributionSummary =
-    commitCount > 1
-      ? `Corroborated across ${commitCount} repository commits (${attrCertainty} attribution).`
-      : commitCount === 1
-        ? `Single commit evidence (${attrCertainty} attribution).`
-        : 'No direct commit history available in repository tree.';
+
 
   // Dimension 3: Practical Performance
   const practicalSummary = practicalEval.passed

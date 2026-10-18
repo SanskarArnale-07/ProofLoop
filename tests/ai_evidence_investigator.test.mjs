@@ -15,7 +15,6 @@ const {
   InvestigatorToolContext,
   normalizeInvestigationReport,
   buildInvestigatorSystemPrompt,
-  INVESTIGATOR_TOOL_DEFINITIONS,
 } = jiti('../src/lib/agent-investigator.ts');
 
 const { SAMPLE_ASSESSMENT } = jiti('../src/lib/sample-data.ts');

@@ -3,7 +3,6 @@
 // Or: npm run ai:check
 
 async function main() {
-  const provider = process.env.AI_PROVIDER || 'gemini';
   const apiKey = process.env.AI_API_KEY;
   const model = process.env.AI_MODEL;
 

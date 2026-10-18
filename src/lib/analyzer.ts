@@ -281,7 +281,7 @@ export async function evaluateRequirement(options: {
     error?: string;
   }> =
     getFileWithStatus ||
-    (async (p: string, _targetSha?: string) => {
+    (async (p: string) => {
       const c = await getFile(p);
       return {
         content: c,

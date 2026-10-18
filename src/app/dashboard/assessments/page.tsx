@@ -7,7 +7,7 @@ import { Header } from '@/components/Header';
 import { SkillCard } from '@/components/SkillCard';
 import { CodeInspector } from '@/components/CodeInspector';
 import { Assessment, RepositoryEvidence } from '@/lib/types';
-import { FileCheck2, ExternalLink, Calendar, GitBranch, ArrowRight } from 'lucide-react';
+import { ExternalLink } from 'lucide-react';
 
 function AssessmentsContent() {
   const searchParams = useSearchParams();

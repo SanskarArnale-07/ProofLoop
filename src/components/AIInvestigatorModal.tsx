@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useCallback } from 'react';
 import {
   X,
   Sparkles,
@@ -15,7 +15,12 @@ import {
   ChevronUp,
   ShieldCheck,
 } from 'lucide-react';
-import { InvestigationReport, InvestigationFinding } from '@/lib/types';
+import {
+  InvestigationReport,
+  InvestigationFinding,
+  InvestigationToolCall,
+  InvestigationEvidenceItem,
+} from '@/lib/types';
 
 interface AIInvestigatorModalProps {
   isOpen: boolean;
@@ -52,8 +57,7 @@ export function AIInvestigatorModal({
     }
   }, [assessmentId, requirementId]);
 
-  const fetchInvestigation = async (forceDeterministic = false) => {
-    if (loading) return; // Prevent duplicate concurrent requests
+  const fetchInvestigation = useCallback(async (forceDeterministic = false) => {
     setLoading(true);
     setError(null);
 
@@ -107,13 +111,16 @@ export function AIInvestigatorModal({
       clearInterval(interval);
       setLoading(false);
     }
-  };
+  }, [assessmentId, requirementId]);
 
   useEffect(() => {
     if (isOpen && !report && !loading && !error) {
-      fetchInvestigation();
+      const timer = setTimeout(() => {
+        fetchInvestigation();
+      }, 0);
+      return () => clearTimeout(timer);
     }
-  }, [isOpen, report, loading, error]);
+  }, [isOpen, report, loading, error, fetchInvestigation]);
 
   useEffect(() => {
     lastFocused.current = document.activeElement as HTMLElement | null;
@@ -180,12 +187,12 @@ export function AIInvestigatorModal({
       role="dialog"
       aria-modal="true"
       aria-labelledby="investigator-title"
-      className="fixed inset-0 z-[60] flex items-center justify-center p-4 md:p-6 outline-none"
+      className="fixed inset-0 z-60 flex items-center justify-center p-4 md:p-6 outline-none"
       tabIndex={-1}
     >
       {/* Translucent charcoal backdrop */}
       <div
-        className="fixed inset-0 bg-black/65 backdrop-blur-sm z-[61]"
+        className="fixed inset-0 bg-black/65 backdrop-blur-sm z-61"
         onClick={() => {
           if (!loading) onClose();
         }}
@@ -193,19 +200,19 @@ export function AIInvestigatorModal({
 
       {/* Clipboard backing board: deep walnut */}
       <div
-        className="relative z-[62] w-full max-w-[1100px] max-h-[92vh] overflow-hidden rounded-[30px] bg-[#423027] shadow-2xl flex flex-col"
+        className="relative z-62 w-full max-w-275 max-h-[92vh] overflow-hidden rounded-[30px] bg-[#423027] shadow-2xl flex flex-col"
         style={{
           boxShadow:
             '0 2px 10px rgba(0,0,0,0.45), 0 24px 64px -16px rgba(0,0,0,0.55), 0 0 0 1px rgba(255,255,255,0.03)',
         }}
       >
         {/* Metallic clipboard clip at top */}
-        <div className="absolute -top-6 left-1/2 -translate-x-1/2 z-[70]">
+        <div className="absolute -top-6 left-1/2 -translate-x-1/2 z-70">
           <div className="w-28 h-2 rounded-full border border-zinc-400/60 bg-zinc-200/90 shadow-[0_1px_2px_rgba(0,0,0,0.35)]" />
         </div>
 
         {/* Outer frame border around paper sheet */}
-        <div className="relative z-[63] border border-[#7A6654] bg-transparent p-2 rounded-[26px] flex flex-col h-full min-h-0">
+        <div className="relative z-63 border border-[#7A6654] bg-transparent p-2 rounded-[26px] flex flex-col h-full min-h-0">
           {/* Cream paper sheet */}
           <div className="relative flex flex-col h-full min-h-0 overflow-hidden border border-[#C5B9A5] bg-[#F5EFE3] rounded-[22px]">
             {/* Header */}
@@ -362,7 +369,7 @@ export function AIInvestigatorModal({
                     </button>
                     {showToolsUsed && (
                       <div className="p-4 border-t border-[#C5B9A5] space-y-2 bg-[#F5EFE3]">
-                        {report.toolsUsed.map((tool, idx) => (
+                        {report.toolsUsed.map((tool: InvestigationToolCall, idx: number) => (
                           <div
                             key={idx}
                             className="p-3 rounded border border-[#C5B9A5] bg-[#EDE3D2]/70 font-mono text-xs space-y-1.5"
@@ -393,7 +400,7 @@ export function AIInvestigatorModal({
                     </h3>
 
                     <div className="space-y-4">
-                      {report.findings.map((finding) => {
+                      {report.findings.map((finding: InvestigationFinding) => {
                         const badge = getClassificationBadge(finding.classification);
                         const isExpanded = expandedFindings[finding.requirementId] ?? true;
 
@@ -444,7 +451,7 @@ export function AIInvestigatorModal({
                                       Discovered Evidence ({finding.evidence.length})
                                     </span>
                                     <div className="space-y-2">
-                                      {finding.evidence.map((ev, evIdx) => (
+                                      {finding.evidence.map((ev: InvestigationEvidenceItem, evIdx: number) => (
                                         <div
                                           key={evIdx}
                                           className="rounded border border-[#A8AB9F] bg-[#E4E5E0] p-3 text-xs font-mono"
@@ -503,7 +510,7 @@ export function AIInvestigatorModal({
                         Investigation Boundaries & Disclaimers:
                       </span>
                       <ul className="list-disc list-inside space-y-0.5 text-[11px]">
-                        {report.limitations.map((lim, lIdx) => (
+                        {report.limitations.map((lim: string, lIdx: number) => (
                           <li key={lIdx}>{lim}</li>
                         ))}
                       </ul>

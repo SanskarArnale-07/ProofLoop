@@ -37,8 +37,6 @@ export function AIGapCoachCard({
 
   const fetchReport = useCallback(async () => {
     try {
-      setLoading(true);
-      setError(null);
       const res = await fetch(`/api/assessments/${assessmentId}/gap-coach`);
       const data = await res.json();
 
@@ -65,7 +63,10 @@ export function AIGapCoachCard({
   }, [assessmentId]);
 
   useEffect(() => {
-    fetchReport();
+    const timer = setTimeout(() => {
+      fetchReport();
+    }, 0);
+    return () => clearTimeout(timer);
   }, [fetchReport, revisionNumber]);
 
   // Countdown timer for rate limiting

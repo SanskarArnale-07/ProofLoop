@@ -16,7 +16,8 @@ import {
   VerificationVerdict,
   InternshipRequirement,
   AIGapReport,
-  ProfileScanRecord
+  ProfileScanRecord,
+  VerificationTask
 } from './types';
 import { SCORING_RULE_VERSION } from './scoring';
 
@@ -1175,7 +1176,7 @@ function mapVerificationRow(row: Record<string, unknown>): DeveloperVerification
       id: row.task_id as string,
       requirementId: row.requirement_id as string,
       requirementTitle: row.requirement_title as string,
-      taskType: (row.task_type as any) || 'edge_case_fix',
+      taskType: (row.task_type as VerificationTask['taskType']) || 'edge_case_fix',
       title: row.task_title as string,
       scenario: '',
       targetCode: codeRef,
@@ -1439,8 +1440,9 @@ export async function getAIGapReportByRevision(
     return JSON.parse(res.rows[0].report_json) as AIGapReport;
   } catch (err) {
     if (isTableNotFoundError(err)) {
-      const customErr = new Error('Database migration needed: table ai_gap_reports does not exist');
-      (customErr as any).code = 'MIGRATION_NEEDED';
+      const customErr = Object.assign(new Error('Database migration needed: table ai_gap_reports does not exist'), {
+        code: 'MIGRATION_NEEDED',
+      });
       throw customErr;
     }
     throw err;
@@ -1461,8 +1463,9 @@ export async function getLatestAIGapReport(
     return JSON.parse(res.rows[0].report_json) as AIGapReport;
   } catch (err) {
     if (isTableNotFoundError(err)) {
-      const customErr = new Error('Database migration needed: table ai_gap_reports does not exist');
-      (customErr as any).code = 'MIGRATION_NEEDED';
+      const customErr = Object.assign(new Error('Database migration needed: table ai_gap_reports does not exist'), {
+        code: 'MIGRATION_NEEDED',
+      });
       throw customErr;
     }
     throw err;

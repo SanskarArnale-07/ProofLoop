@@ -7,7 +7,6 @@ import {
   Check,
   ExternalLink,
   FileCode,
-  AlertCircle,
   AlertTriangle,
   ShieldCheck,
   CheckCircle2,

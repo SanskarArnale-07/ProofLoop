@@ -2,7 +2,6 @@ import {
   Assessment,
   AssessmentRevision,
   InternshipRequirement,
-  RepositoryEvidence,
   AIGapReport,
   AIGapReportItem,
   AIGapReportRevisionDiff,

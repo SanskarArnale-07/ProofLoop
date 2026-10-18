@@ -53,7 +53,6 @@ export async function GET(
       }
 
       const includeEvidence = searchParams.get('includeEvidence') === 'true';
-      const includeScoringBreakdown = searchParams.get('includeScoringBreakdown') === 'true';
 
       const historyResult = await getEvaluationHistory(cleanId, {
         order,

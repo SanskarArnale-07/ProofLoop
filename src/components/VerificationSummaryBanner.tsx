@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { AssessmentVerificationSummary, DeveloperVerificationRecord } from '@/lib/types';
+import { AssessmentVerificationSummary } from '@/lib/types';
 import {
   Award,
   CheckCircle2,
@@ -153,7 +153,7 @@ export function VerificationSummaryBanner({
               <div className="p-3 bg-[#211A16] border border-[#584638]/50 rounded">
                 <span className="font-bold text-[#F5F0E5] block mb-1">2. Practical Performance</span>
                 <p className="text-[#BDB0A2] font-sans text-[11px]">
-                  How the developer's solution handles real boundary conditions, contract preservation, and syntax.
+                  How the developer&apos;s solution handles real boundary conditions, contract preservation, and syntax.
                 </p>
               </div>
 

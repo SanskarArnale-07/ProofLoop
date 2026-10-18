@@ -19,9 +19,7 @@ const {
 
 const {
   saveAssessment,
-  getAssessment,
   saveDeveloperVerification,
-  getDeveloperVerifications,
   getVerificationForRequirement,
   getAssessmentVerificationSummary,
   ensureDeveloperVerificationsTable

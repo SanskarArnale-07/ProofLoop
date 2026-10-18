@@ -39,6 +39,7 @@ export function getSpecificVerificationTask(
 ): string {
   const cat = req.category || 'general';
   const titleLower = req.title.toLowerCase();
+  const fileContext = ev?.filePath ? ` for ${ev.filePath}` : '';
 
   // 1. Backend & REST API Development
   if (
@@ -133,7 +134,7 @@ export function getSpecificVerificationTask(
   if (classification === 'supported') {
     return `Demonstrate ${req.title} with automated unit assertions and comprehensive edge-case handling.`;
   }
-  return `Implement a practical working feature demonstrating ${req.title} with automated assertions.`;
+  return `Implement a practical working feature demonstrating ${req.title}${fileContext} with automated assertions.`;
 }
 
 // ============================================================================
@@ -286,15 +287,7 @@ export class InvestigatorToolContext {
         for (const rf of ev.relevantFiles) this.treeFiles.add(rf.replace(/\\/g, '/'));
       }
     }
-    if (assessment.recentActivity) {
-      for (const act of assessment.recentActivity) {
-        if (act.affectedSkills) {
-          for (const s of act.affectedSkills) {
-            // keep index active
-          }
-        }
-      }
-    }
+    // Index files from recent activity if needed
   }
 
   public getKnownFiles(): Set<string> {

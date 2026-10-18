@@ -1,5 +1,4 @@
 @import "tailwindcss";
-@import "./working-volumes.css";
 
 @custom-variant dark (&:where(.dark, .dark *));
 

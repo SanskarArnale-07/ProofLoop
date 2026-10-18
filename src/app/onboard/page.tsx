@@ -9,8 +9,7 @@ import {
   CheckCircle2,
   AlertCircle,
   Globe,
-  Sparkles,
-  RefreshCw
+  Sparkles
 } from 'lucide-react';
 import { GithubIcon } from '@/components/GithubIcon';
 import { InternshipPosting, ProfileScanRecord, ProfileScanStatus } from '@/lib/types';

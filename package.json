@@ -13,16 +13,12 @@
     "db:import": "node scripts/import-sqlite-to-postgres.mjs"
   },
   "dependencies": {
-    "@react-three/drei": "^10.7.9",
-    "@react-three/fiber": "^9.8.2",
-    "@types/three": "^0.186.0",
     "cheerio": "^1.2.0",
     "lucide-react": "^1.58.0",
     "next": "16.4.2",
     "pg": "^8.23.1",
     "react": "19.3.0",
-    "react-dom": "19.3.0",
-    "three": "^0.186.1"
+    "react-dom": "19.3.0"
   },
   "devDependencies": {
     "@tailwindcss/turbopack": "^4",
