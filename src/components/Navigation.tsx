@@ -6,7 +6,6 @@ import {
   LayoutDashboard,
   FileCheck2,
   Compass,
-  History,
   PlusCircle,
 } from 'lucide-react';
 
@@ -35,12 +34,6 @@ export function Navigation({ currentAssessmentId }: NavigationProps) {
       href: currentAssessmentId ? `/dashboard/roadmap?id=${currentAssessmentId}` : '/dashboard/roadmap',
       icon: Compass,
       active: pathname.startsWith('/dashboard/roadmap')
-    },
-    {
-      name: 'History & Audit',
-      href: currentAssessmentId ? `/dashboard/history?id=${currentAssessmentId}` : '/dashboard/history',
-      icon: History,
-      active: pathname.startsWith('/dashboard/history')
     }
   ];
 
