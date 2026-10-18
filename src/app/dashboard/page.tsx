@@ -9,6 +9,7 @@ import { CodeInspector } from '@/components/CodeInspector';
 import { WebhookSimulatorModal } from '@/components/WebhookSimulatorModal';
 import { VerificationSummaryBanner } from '@/components/VerificationSummaryBanner';
 import { SkillVerificationModal } from '@/components/SkillVerificationModal';
+import { AIGapCoachCard } from '@/components/AIGapCoachCard';
 import {
   Assessment,
   RepositoryEvidence,
@@ -279,6 +280,13 @@ function DashboardContent() {
             </div>
           </div>
         </section>
+
+        {/* AI Gap Coach Card */}
+        <AIGapCoachCard
+          assessmentId={assessment.id}
+          revisionNumber={assessment.currentRevisionNumber}
+          onRefreshParent={fetchAssessment}
+        />
 
         {/* Evaluated Requirements */}
         <section className="space-y-4 w-full">

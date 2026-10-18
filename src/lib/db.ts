@@ -14,7 +14,9 @@ import {
   DeveloperVerificationRecord,
   AssessmentVerificationSummary,
   VerificationVerdict,
-  InternshipRequirement
+  InternshipRequirement,
+  AIGapReport,
+  ProfileScanRecord
 } from './types';
 import { SCORING_RULE_VERSION } from './scoring';
 
@@ -1363,3 +1365,264 @@ export async function getAssessmentVerificationSummary(
       'Verification assesses practical execution and reasoning under declared conditions. It does not claim 100% cheat detection or substitute for complete software lifecycle performance.'
   };
 }
+
+// ============================================================================
+// AI Gap Report Operations
+// ============================================================================
+
+export function isTableNotFoundError(err: unknown, tableName?: string): boolean {
+  if (!err || typeof err !== 'object') return false;
+  const e = err as { code?: string; message?: string };
+  if (e.code === '42P01') return true;
+  if (typeof e.message === 'string') {
+    const msg = e.message.toLowerCase();
+    if (tableName) {
+      return msg.includes(`relation "${tableName.toLowerCase()}" does not exist`);
+    }
+    return msg.includes('relation') && msg.includes('does not exist');
+  }
+  return false;
+}
+
+export async function isAIGapReportsTableReady(client?: PoolClient | Pool): Promise<boolean> {
+  try {
+    const runner = client || getPool();
+    const res = await runner.query(`
+      SELECT 1 FROM information_schema.tables 
+      WHERE table_schema = 'public' AND table_name = 'ai_gap_reports' LIMIT 1;
+    `);
+    return res.rows.length > 0;
+  } catch {
+    return false;
+  }
+}
+
+export async function saveAIGapReport(
+  report: AIGapReport,
+  client?: PoolClient
+): Promise<void> {
+  const runner = client || getPool();
+  const stmt = `
+    INSERT INTO ai_gap_reports (
+      id, assessment_id, revision_id, scoring_rule_version,
+      generated_by, report_json, created_at
+    )
+    VALUES ($1, $2, $3, $4, $5, $6, $7)
+    ON CONFLICT (revision_id, scoring_rule_version) DO UPDATE SET
+      generated_by = EXCLUDED.generated_by,
+      report_json = EXCLUDED.report_json,
+      created_at = EXCLUDED.created_at;
+  `;
+  await runner.query(stmt, [
+    report.id,
+    report.assessmentId,
+    report.revisionId,
+    report.scoringRuleVersion,
+    report.generatedBy,
+    JSON.stringify(report),
+    report.createdAt
+  ]);
+}
+
+export async function getAIGapReportByRevision(
+  revisionId: string,
+  scoringRuleVersion: string = SCORING_RULE_VERSION,
+  client?: PoolClient
+): Promise<AIGapReport | null> {
+  const runner = client || getPool();
+  try {
+    const res = await runner.query(
+      'SELECT report_json FROM ai_gap_reports WHERE revision_id = $1 AND scoring_rule_version = $2 LIMIT 1',
+      [revisionId, scoringRuleVersion]
+    );
+    if (res.rows.length === 0) return null;
+    return JSON.parse(res.rows[0].report_json) as AIGapReport;
+  } catch (err) {
+    if (isTableNotFoundError(err)) {
+      const customErr = new Error('Database migration needed: table ai_gap_reports does not exist');
+      (customErr as any).code = 'MIGRATION_NEEDED';
+      throw customErr;
+    }
+    throw err;
+  }
+}
+
+export async function getLatestAIGapReport(
+  assessmentId: string,
+  client?: PoolClient
+): Promise<AIGapReport | null> {
+  const runner = client || getPool();
+  try {
+    const res = await runner.query(
+      'SELECT report_json FROM ai_gap_reports WHERE assessment_id = $1 ORDER BY created_at DESC LIMIT 1',
+      [assessmentId]
+    );
+    if (res.rows.length === 0) return null;
+    return JSON.parse(res.rows[0].report_json) as AIGapReport;
+  } catch (err) {
+    if (isTableNotFoundError(err)) {
+      const customErr = new Error('Database migration needed: table ai_gap_reports does not exist');
+      (customErr as any).code = 'MIGRATION_NEEDED';
+      throw customErr;
+    }
+    throw err;
+  }
+}
+
+export async function getLatestReportTimestamp(
+  assessmentId: string,
+  client?: PoolClient
+): Promise<Date | null> {
+  const runner = client || getPool();
+  try {
+    const res = await runner.query(
+      'SELECT created_at FROM ai_gap_reports WHERE assessment_id = $1 ORDER BY created_at DESC LIMIT 1',
+      [assessmentId]
+    );
+    if (res.rows.length === 0) return null;
+    return new Date(res.rows[0].created_at);
+  } catch (err) {
+    if (isTableNotFoundError(err)) {
+      return null;
+    }
+    throw err;
+  }
+}
+
+// ============================================================================
+// Profile Scan & Repo Cache Operations
+// ============================================================================
+
+export async function saveRepoScanCache(
+  repoFullName: string,
+  pushedAt: string,
+  evidence: RepositoryEvidence[],
+  client?: PoolClient
+): Promise<void> {
+  const runner = client || getPool();
+  const id = `cache-${repoFullName.replace(/\//g, '_')}-${Date.now().toString(36)}`;
+  const stmt = `
+    INSERT INTO repo_scan_cache (id, repo_full_name, pushed_at, evidence_json, created_at)
+    VALUES ($1, $2, $3, $4, $5)
+    ON CONFLICT (repo_full_name, pushed_at) DO UPDATE SET
+      evidence_json = EXCLUDED.evidence_json,
+      created_at = EXCLUDED.created_at;
+  `;
+  await runner.query(stmt, [id, repoFullName, pushedAt, JSON.stringify(evidence), new Date().toISOString()]);
+}
+
+export async function getRepoScanCache(
+  repoFullName: string,
+  pushedAt: string,
+  client?: PoolClient
+): Promise<RepositoryEvidence[] | null> {
+  const runner = client || getPool();
+  try {
+    const res = await runner.query(
+      'SELECT evidence_json FROM repo_scan_cache WHERE repo_full_name = $1 AND pushed_at = $2 LIMIT 1',
+      [repoFullName, pushedAt]
+    );
+    if (res.rows.length === 0) return null;
+    return JSON.parse(res.rows[0].evidence_json) as RepositoryEvidence[];
+  } catch (err) {
+    if (isTableNotFoundError(err, 'repo_scan_cache')) return null;
+    throw err;
+  }
+}
+
+export async function saveProfileScan(
+  scan: ProfileScanRecord,
+  client?: PoolClient
+): Promise<void> {
+  const runner = client || getPool();
+  const stmt = `
+    INSERT INTO profile_scans (
+      id, username, internship_id, assessment_id,
+      scanned_repos_json, best_evidence_json, suggested_roles_json,
+      status, progress_message, error_message, is_partial,
+      created_at, updated_at
+    )
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+    ON CONFLICT (id) DO UPDATE SET
+      username = EXCLUDED.username,
+      internship_id = EXCLUDED.internship_id,
+      assessment_id = EXCLUDED.assessment_id,
+      scanned_repos_json = EXCLUDED.scanned_repos_json,
+      best_evidence_json = EXCLUDED.best_evidence_json,
+      suggested_roles_json = EXCLUDED.suggested_roles_json,
+      status = EXCLUDED.status,
+      progress_message = EXCLUDED.progress_message,
+      error_message = EXCLUDED.error_message,
+      is_partial = EXCLUDED.is_partial,
+      updated_at = EXCLUDED.updated_at;
+  `;
+  await runner.query(stmt, [
+    scan.id,
+    scan.username,
+    scan.internshipId,
+    scan.assessmentId || null,
+    JSON.stringify(scan.scannedRepos),
+    JSON.stringify(scan.bestEvidence),
+    JSON.stringify(scan.suggestedRoles || []),
+    scan.status,
+    scan.progressMessage || null,
+    scan.errorMessage || null,
+    scan.isPartial ? 1 : 0,
+    scan.createdAt,
+    scan.updatedAt
+  ]);
+}
+
+export async function getProfileScan(
+  id: string,
+  client?: PoolClient
+): Promise<ProfileScanRecord | null> {
+  const runner = client || getPool();
+  try {
+    const res = await runner.query(
+      'SELECT * FROM profile_scans WHERE id = $1 LIMIT 1',
+      [id]
+    );
+    const row = res.rows[0];
+    if (!row) return null;
+
+    return {
+      id: row.id,
+      username: row.username,
+      internshipId: row.internship_id,
+      assessmentId: row.assessment_id || undefined,
+      scannedRepos: row.scanned_repos_json ? JSON.parse(row.scanned_repos_json) : [],
+      bestEvidence: row.best_evidence_json ? JSON.parse(row.best_evidence_json) : [],
+      suggestedRoles: row.suggested_roles_json ? JSON.parse(row.suggested_roles_json) : [],
+      status: row.status as ProfileScanRecord['status'],
+      progressMessage: row.progress_message || undefined,
+      errorMessage: row.error_message || undefined,
+      isPartial: Boolean(row.is_partial),
+      createdAt: row.created_at,
+      updatedAt: row.updated_at
+    };
+  } catch (err) {
+    if (isTableNotFoundError(err, 'profile_scans')) return null;
+    throw err;
+  }
+}
+
+export async function updateProfileScanProgress(
+  id: string,
+  progressMessage: string,
+  client?: PoolClient
+): Promise<void> {
+  const runner = client || getPool();
+  try {
+    await runner.query(
+      'UPDATE profile_scans SET progress_message = $1, updated_at = $2 WHERE id = $3',
+      [progressMessage, new Date().toISOString(), id]
+    );
+  } catch (err) {
+    if (!isTableNotFoundError(err, 'profile_scans')) {
+      console.warn('Could not update profile scan progress:', err);
+    }
+  }
+}
+
+

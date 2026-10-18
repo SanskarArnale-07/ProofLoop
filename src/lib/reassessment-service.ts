@@ -11,6 +11,7 @@ import {
   Assessment
 } from './types';
 import { SCORING_RULE_VERSION } from './scoring';
+import { triggerBackgroundGapReportGeneration } from './ai/gap-coach';
 
 export interface ReassessAssessmentInput {
   /** The assessment identifier to reassess */
@@ -101,6 +102,19 @@ export async function reassessAssessment(
       assessmentId,
       error: `Assessment "${assessmentId}" not found.`,
       errorCode: 'ASSESSMENT_NOT_FOUND'
+    };
+  }
+
+  // Profile assessments combine multiple repositories. Reassessing as a single repo is disallowed.
+  if (
+    assessment.repository.fullName.startsWith('profile/') ||
+    assessment.repository.latestCommitSha === 'profile-scan'
+  ) {
+    return {
+      success: false,
+      assessmentId,
+      error: 'Profile assessments combine multiple repositories. To re-scan, run an auto-scan from the onboard page.',
+      errorCode: 'PROFILE_ASSESSMENT_NOT_SINGLE_REPO'
     };
   }
 
@@ -212,6 +226,8 @@ async function performReassessment(input: {
 
   try {
     await saveRevision(newRev);
+    // Best-effort background AI Gap Coach generation; never blocks or fails reassessment
+    triggerBackgroundGapReportGeneration(assessment, newRev);
   } catch (err) {
     const errMsg = err instanceof Error ? err.message : 'Failed to save revision';
     try {

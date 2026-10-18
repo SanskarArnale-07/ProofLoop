@@ -15,7 +15,14 @@ export function Header({ assessment, onReassessed, showReassess = false }: Heade
   const [isReassessing, setIsReassessing] = useState(false);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
 
+  const isSample = assessment.id.includes('sample');
+  const isProfileAssessment = assessment.repository.fullName?.startsWith('profile/') || false;
+
   const handleManualReassessment = async () => {
+    if (isProfileAssessment) {
+      alert('Profile assessments combine multiple repositories. To update your evidence, run a fresh scan from the Onboard page.');
+      return;
+    }
     setIsReassessing(true);
     setStatusMessage(null);
     try {
@@ -37,8 +44,6 @@ export function Header({ assessment, onReassessed, showReassess = false }: Heade
       setIsReassessing(false);
     }
   };
-
-  const isSample = assessment.id.includes('sample');
 
   return (
     <header className="border-b border-[#584638] bg-[#211A16]/90 backdrop-blur-md sticky top-0 z-30 px-8 py-5">
@@ -65,6 +70,11 @@ export function Header({ assessment, onReassessed, showReassess = false }: Heade
             <span className="font-semibold text-[#F5F0E5] uppercase tracking-wider">
               {assessment.internship.company}
             </span>
+            {isProfileAssessment && (
+              <span className="ml-2 px-2 py-0.5 bg-[#30251F] border border-[#584638] text-[10px] text-sky-400 rounded">
+                Profile Scan ({assessment.repository.fullName.replace(/^profile\//, '')})
+              </span>
+            )}
           </div>
 
           <h1 className="font-editorial text-2xl lg:text-3xl font-bold tracking-tight text-[#F5F0E5]">
@@ -81,15 +91,29 @@ export function Header({ assessment, onReassessed, showReassess = false }: Heade
           )}
 
           {showReassess && (
-            <button
-              onClick={handleManualReassessment}
-              disabled={isReassessing}
-              className="flex items-center space-x-2 px-3.5 py-2 border border-[#584638] bg-[#30251F] hover:bg-[#3A2D26] text-xs font-mono rounded font-medium text-[#F5F0E5] transition-colors disabled:opacity-50"
-              title="Re-run assessment against repository code"
-            >
-              <RefreshCw className={`w-3.5 h-3.5 ${isReassessing ? 'animate-spin' : ''}`} />
-              <span>{isReassessing ? 'Reassessing...' : 'Reassess Scope'}</span>
-            </button>
+            isProfileAssessment ? (
+              <div className="relative group">
+                <button
+                  type="button"
+                  disabled
+                  className="flex items-center space-x-2 px-3.5 py-2 border border-[#584638] bg-[#30251F]/40 text-xs font-mono rounded font-medium text-[#BDB0A2] opacity-60 cursor-not-allowed"
+                  title="Profile assessments combine multiple repos. To update, run a fresh scan from Onboard."
+                >
+                  <RefreshCw className="w-3.5 h-3.5" />
+                  <span>Reassess Scope</span>
+                </button>
+              </div>
+            ) : (
+              <button
+                onClick={handleManualReassessment}
+                disabled={isReassessing}
+                className="flex items-center space-x-2 px-3.5 py-2 border border-[#584638] bg-[#30251F] hover:bg-[#3A2D26] text-xs font-mono rounded font-medium text-[#F5F0E5] transition-colors disabled:opacity-50"
+                title="Re-run assessment against repository code"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 ${isReassessing ? 'animate-spin' : ''}`} />
+                <span>{isReassessing ? 'Reassessing...' : 'Reassess Scope'}</span>
+              </button>
+            )
           )}
         </div>
       </div>

@@ -1363,7 +1363,7 @@ export async function evaluateRequirement(options: {
   }
 }
 
-function createGapTask(req: InternshipRequirement, evidence?: RepositoryEvidence): GapTask {
+export function createGapTask(req: InternshipRequirement, evidence?: RepositoryEvidence): GapTask {
   const taskMap: Record<string, Partial<GapTask>> = {
     'req-testing': {
       title: 'Implement Automated Unit & Integration Tests',

@@ -5,6 +5,7 @@ import { parseGitHubRepoUrl, fetchRepoDetails, fetchRepoCommits, fetchRepoTree }
 import { analyzeRepositoryAgainstRequirements } from '@/lib/analyzer';
 import { Assessment, AssessmentRevision, ActivityEvent, InternshipPosting } from '@/lib/types';
 import { SCORING_RULE_VERSION } from '@/lib/scoring';
+import { triggerBackgroundGapReportGeneration } from '@/lib/ai/gap-coach';
 
 export async function GET() {
   try {
@@ -178,6 +179,8 @@ export async function POST(req: NextRequest) {
     // 5. Save to database
     const tPersist = Date.now();
     await saveAssessment(assessment);
+    // Best-effort background AI Gap Coach generation for initial assessment
+    triggerBackgroundGapReportGeneration(assessment, assessment.latestRevision);
     console.log(`[Assessment Creation] Persisted assessment "${assessmentId}" in ${Date.now() - tPersist}ms. Total request duration: ${Date.now() - startTime}ms`);
 
     return NextResponse.json({

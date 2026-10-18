@@ -27,7 +27,12 @@ export async function POST(
     });
 
     if (!result.success) {
-      const statusCode = result.errorCode === 'ASSESSMENT_NOT_FOUND' ? 404 : 500;
+      const statusCode =
+        result.errorCode === 'ASSESSMENT_NOT_FOUND'
+          ? 404
+          : result.errorCode === 'PROFILE_ASSESSMENT_NOT_SINGLE_REPO'
+            ? 400
+            : 500;
       return NextResponse.json(
         {
           error: result.error || 'Reassessment failed',

@@ -5,6 +5,7 @@ import { useSearchParams } from 'next/navigation';
 import { Navigation } from '@/components/Navigation';
 import { Header } from '@/components/Header';
 import { RoadmapCard } from '@/components/RoadmapCard';
+import { AIGapCoachCard } from '@/components/AIGapCoachCard';
 import { WebhookSimulatorModal } from '@/components/WebhookSimulatorModal';
 import { Assessment, GapTask } from '@/lib/types';
 import { Compass, CheckCircle2, Sparkles } from 'lucide-react';
@@ -90,6 +91,12 @@ function RoadmapContent() {
             <span>{promotedNotification}</span>
           </div>
         )}
+
+        {/* AI Gap Coach Card */}
+        <AIGapCoachCard
+          assessmentId={assessment.id}
+          revisionNumber={assessment.currentRevisionNumber}
+        />
 
         {tasks.length === 0 ? (
           <div className="p-12 bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded text-center space-y-3 font-mono text-xs">

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import {
@@ -9,11 +9,13 @@ import {
   CheckCircle2,
   AlertCircle,
   Globe,
-  Sparkles
+  Sparkles,
+  RefreshCw
 } from 'lucide-react';
 import { GithubIcon } from '@/components/GithubIcon';
-import { InternshipPosting } from '@/lib/types';
+import { InternshipPosting, ProfileScanRecord, ProfileScanStatus } from '@/lib/types';
 import { AnalysisTransition } from '@/components/AnalysisTransition';
+import { ProfileScanResults } from '@/components/ProfileScanResults';
 
 export default function OnboardPage() {
   const router = useRouter();
@@ -29,21 +31,31 @@ export default function OnboardPage() {
   const [manualText, setManualText] = useState('');
   const [internshipData, setInternshipData] = useState<InternshipPosting | null>(null);
 
-interface VerifiedRepoDetails {
-  fullName?: string;
-  defaultBranch?: string;
-  latestCommitSha?: string;
-  latestCommitMessage?: string;
-  url?: string;
-  html_url?: string;
-  [key: string]: unknown;
-}
+  interface VerifiedRepoDetails {
+    fullName?: string;
+    defaultBranch?: string;
+    latestCommitSha?: string;
+    latestCommitMessage?: string;
+    url?: string;
+    html_url?: string;
+    [key: string]: unknown;
+  }
 
-  // Step 2: GitHub
+  // Step 2: Mode & Single Repo
+  const [scanMode, setScanMode] = useState<'single' | 'profile'>('single');
   const [repoInput, setRepoInput] = useState('');
   const [isVerifyingRepo, setIsVerifyingRepo] = useState(false);
   const [repoError, setRepoError] = useState<string | null>(null);
   const [repoDetails, setRepoDetails] = useState<VerifiedRepoDetails | null>(null);
+
+  // Profile Scan State
+  const [profileInput, setProfileInput] = useState('');
+  const [isStartingProfileScan, setIsStartingProfileScan] = useState(false);
+  const [profileScanId, setProfileScanId] = useState<string | null>(null);
+  const [profileScanRecord, setProfileScanRecord] = useState<ProfileScanRecord | null>(null);
+  const [profileScanStatus, setProfileScanStatus] = useState<ProfileScanStatus | null>(null);
+  const [profileScanProgress, setProfileScanProgress] = useState<string>('');
+  const [profileScanError, setProfileScanError] = useState<string | null>(null);
 
   // Step 3: Analysis Transition
   const [isAnalyzing, setIsAnalyzing] = useState(false);
@@ -148,6 +160,84 @@ interface VerifiedRepoDetails {
     setIsAnalyzing(false);
     setAnalysisError(null);
     setStep(3);
+  };
+
+  // Poll profile scan status while scanning
+  useEffect(() => {
+    if (!profileScanId || profileScanStatus !== 'scanning') return;
+
+    let isMounted = true;
+    const interval = setInterval(async () => {
+      try {
+        const res = await fetch(`/api/profile-scan/${encodeURIComponent(profileScanId)}`);
+        const data = await res.json();
+        if (!isMounted) return;
+
+        if (data.success && data.scan) {
+          const scan = data.scan as ProfileScanRecord;
+          setProfileScanRecord(scan);
+          setProfileScanStatus(scan.status);
+          if (scan.progressMessage) {
+            setProfileScanProgress(scan.progressMessage);
+          }
+          if (scan.status === 'failed') {
+            setProfileScanError(scan.errorMessage || 'Scan stopped or took too long. Try again.');
+          }
+        } else if (!res.ok) {
+          setProfileScanStatus('failed');
+          setProfileScanError(data.error || 'Scan stopped. Please try again.');
+        }
+      } catch {
+        // Continue polling on temporary network hiccups
+      }
+    }, 1500);
+
+    return () => {
+      isMounted = false;
+      clearInterval(interval);
+    };
+  }, [profileScanId, profileScanStatus]);
+
+  const handleStartProfileScan = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!internshipData || !profileInput.trim()) return;
+
+    setIsStartingProfileScan(true);
+    setProfileScanError(null);
+    setProfileScanStatus('scanning');
+    setProfileScanProgress('Connecting to GitHub...');
+
+    try {
+      const res = await fetch('/api/profile-scan/start', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          profileInput: profileInput.trim(),
+          internship: internshipData
+        })
+      });
+
+      const data = await res.json();
+      if (!res.ok || !data.success || !data.scanId) {
+        setProfileScanStatus('failed');
+        setProfileScanError(data.error || 'Could not start profile scan. Please check the username.');
+      } else {
+        setProfileScanId(data.scanId);
+      }
+    } catch {
+      setProfileScanStatus('failed');
+      setProfileScanError('Network error starting profile scan. Please try again.');
+    } finally {
+      setIsStartingProfileScan(false);
+    }
+  };
+
+  const handleResetProfileScan = () => {
+    setProfileScanRecord(null);
+    setProfileScanStatus(null);
+    setProfileScanId(null);
+    setProfileScanError(null);
+    setProfileScanProgress('');
   };
 
   const handleStartAnalysis = async () => {
@@ -410,110 +500,291 @@ interface VerifiedRepoDetails {
           </div>
         )}
 
-        {/* STEP 2: GITHUB REPOSITORY */}
+        {/* STEP 2: GITHUB REPOSITORY OR PROFILE */}
         {step === 2 && internshipData && (
           <div className="space-y-8 animate-fade-in">
-            <button
-              onClick={() => setStep(1)}
-              className="inline-flex items-center space-x-1 text-xs text-[#BDB0A2] hover:text-[#F5F0E5] cursor-pointer"
-            >
-              <ArrowLeft className="w-3.5 h-3.5 text-[#BDB0A2]" />
-              <span>Back to Step 1</span>
-            </button>
-
-            <div>
-              <span className="text-xs uppercase tracking-widest text-[#BDB0A2] block mb-2 font-semibold">
-                Step 2 of 3
-              </span>
-              <h1 className="font-editorial text-3xl sm:text-4xl font-bold tracking-tight text-[#F5F0E5]">
-                Connect your code evidence
-              </h1>
-              <p className="text-xs text-[#BDB0A2] font-sans mt-2 leading-relaxed">
-                Provide a public GitHub repository URL or repository identifier (e.g., <code className="font-mono bg-[#211A16] px-1 py-0.5 rounded text-[#F5F0E5]">owner/repo</code>).
-                ProofLoop validates that the repository is accessible and checks commit history before analysis.
-              </p>
-            </div>
-
-            {/* Extracted Requirements Preview */}
-            <div className="p-4 bg-[#211A16] border border-[#584638] rounded">
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-xs font-bold text-[#F5F0E5]">
-                  {internshipData.company} — {internshipData.title}
-                </span>
-                <span className="text-[11px] text-[#BDB0A2]">
-                  {internshipData.requirements.length} Requirements Extracted
-                </span>
-              </div>
-              <div className="flex flex-wrap gap-1.5">
-                {internshipData.requirements.map(req => (
-                  <span
-                    key={req.id}
-                    className="px-2 py-0.5 bg-[#30251F] border border-[#584638] rounded text-[10px] text-[#F5F0E5]"
-                  >
-                    {req.title}
-                  </span>
-                ))}
-              </div>
-            </div>
-
-            {/* Repo Input Form */}
-            <form onSubmit={handleVerifyRepo} className="space-y-4">
-              <div>
-                <label className="block text-xs font-semibold uppercase text-[#BDB0A2] mb-1">
-                  Public GitHub Repository URL
-                </label>
-                <div className="relative">
-                  <GithubIcon className="w-4 h-4 absolute left-3 top-3 text-[#BDB0A2]" />
-                  <input
-                    type="text"
-                    value={repoInput}
-                    onChange={(e) => setRepoInput(e.target.value)}
-                    placeholder="https://github.com/alexchen/payment-orchestrator or alexchen/payment-orchestrator"
-                    required
-                    className="w-full pl-9 pr-3 py-2.5 bg-[#211A16] border border-[#584638] rounded text-xs font-mono text-[#F5F0E5] placeholder:text-[#BDB0A2]/60 focus:outline-hidden focus:border-[#DD5946]"
-                  />
-                </div>
-              </div>
-
-              {/* Sample repos for instant demonstration */}
-              <div className="text-[11px] text-[#BDB0A2] space-y-1">
-                <span className="font-bold text-[#F5F0E5]">Quick Test Repositories:</span>
-                <div className="flex flex-wrap gap-2 pt-1">
-                  <button
-                    type="button"
-                    onClick={() => setRepoInput('alexchen/payment-orchestrator')}
-                    className="px-2.5 py-1 bg-[#211A16] hover:bg-[#3d3028] text-[#F5F0E5] border border-[#584638] rounded text-[10px] cursor-pointer transition-colors"
-                  >
-                    alexchen/payment-orchestrator (Sample Backend)
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setRepoInput('vercel/next.js')}
-                    className="px-2.5 py-1 bg-[#211A16] hover:bg-[#3d3028] text-[#F5F0E5] border border-[#584638] rounded text-[10px] cursor-pointer transition-colors"
-                  >
-                    vercel/next.js (Public Open Source)
-                  </button>
-                </div>
-              </div>
-
-              {repoError && (
-                <div className="p-3 bg-[#211A16] border border-red-500/60 rounded flex items-center space-x-2 text-xs text-[#F5F0E5]">
-                  <AlertCircle className="w-4 h-4 text-red-400 shrink-0" />
-                  <span>{repoError}</span>
-                </div>
-              )}
-
-              <div className="pt-4 flex justify-end">
+            {profileScanRecord && (profileScanStatus === 'completed' || profileScanStatus === 'partial') ? (
+              <ProfileScanResults
+                scan={profileScanRecord}
+                onReset={handleResetProfileScan}
+              />
+            ) : (
+              <>
                 <button
-                  type="submit"
-                  disabled={isVerifyingRepo}
-                  className="px-6 py-3 bg-white hover:bg-[#f4efe2] text-[#2B211B] font-mono text-xs font-bold rounded flex items-center space-x-2 border border-[#d5ccba] disabled:opacity-50 transition-colors shadow-sm cursor-pointer"
+                  onClick={() => setStep(1)}
+                  className="inline-flex items-center space-x-1 text-xs text-[#BDB0A2] hover:text-[#F5F0E5] cursor-pointer"
                 >
-                  <span className="text-[#2B211B] font-bold">{isVerifyingRepo ? 'Verifying GitHub Access...' : 'Review Scope & Analyze'}</span>
-                  <ArrowRight className="w-3.5 h-3.5 text-[#2B211B]" />
+                  <ArrowLeft className="w-3.5 h-3.5 text-[#BDB0A2]" />
+                  <span>Back to Step 1</span>
                 </button>
-              </div>
-            </form>
+
+                {/* Mode Toggle: One repo / My GitHub profile */}
+                <div className="flex p-1 bg-[#211A16] border border-[#584638] rounded w-fit">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setScanMode('single');
+                      setProfileScanError(null);
+                    }}
+                    className={`px-4 py-2 text-xs font-mono font-bold rounded transition-colors cursor-pointer ${
+                      scanMode === 'single'
+                        ? 'bg-white text-[#2B211B] shadow-xs'
+                        : 'text-[#BDB0A2] hover:text-[#F5F0E5]'
+                    }`}
+                  >
+                    One repo
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setScanMode('profile');
+                      setRepoError(null);
+                    }}
+                    className={`px-4 py-2 text-xs font-mono font-bold rounded transition-colors cursor-pointer flex items-center space-x-1.5 ${
+                      scanMode === 'profile'
+                        ? 'bg-white text-[#2B211B] shadow-xs'
+                        : 'text-[#BDB0A2] hover:text-[#F5F0E5]'
+                    }`}
+                  >
+                    <Sparkles className="w-3.5 h-3.5" />
+                    <span>My GitHub profile</span>
+                  </button>
+                </div>
+
+                {/* SINGLE REPO FLOW */}
+                {scanMode === 'single' && (
+                  <div className="space-y-8 animate-fade-in">
+                    <div>
+                      <span className="text-xs uppercase tracking-widest text-[#BDB0A2] block mb-2 font-semibold">
+                        Step 2 of 3 • Single Repository
+                      </span>
+                      <h1 className="font-editorial text-3xl sm:text-4xl font-bold tracking-tight text-[#F5F0E5]">
+                        Connect your code evidence
+                      </h1>
+                      <p className="text-xs text-[#BDB0A2] font-sans mt-2 leading-relaxed">
+                        Provide a public GitHub repository URL or repository identifier (e.g., <code className="font-mono bg-[#211A16] px-1 py-0.5 rounded text-[#F5F0E5]">owner/repo</code>).
+                        ProofLoop validates that the repository is accessible and checks commit history before analysis.
+                      </p>
+                    </div>
+
+                    {/* Extracted Requirements Preview */}
+                    <div className="p-4 bg-[#211A16] border border-[#584638] rounded">
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-xs font-bold text-[#F5F0E5]">
+                          {internshipData.company} — {internshipData.title}
+                        </span>
+                        <span className="text-[11px] text-[#BDB0A2]">
+                          {internshipData.requirements.length} Requirements Extracted
+                        </span>
+                      </div>
+                      <div className="flex flex-wrap gap-1.5">
+                        {internshipData.requirements.map(req => (
+                          <span
+                            key={req.id}
+                            className="px-2 py-0.5 bg-[#30251F] border border-[#584638] rounded text-[10px] text-[#F5F0E5]"
+                          >
+                            {req.title}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Repo Input Form */}
+                    <form onSubmit={handleVerifyRepo} className="space-y-4">
+                      <div>
+                        <label className="block text-xs font-semibold uppercase text-[#BDB0A2] mb-1">
+                          Public GitHub Repository URL
+                        </label>
+                        <div className="relative">
+                          <GithubIcon className="w-4 h-4 absolute left-3 top-3 text-[#BDB0A2]" />
+                          <input
+                            type="text"
+                            value={repoInput}
+                            onChange={(e) => setRepoInput(e.target.value)}
+                            placeholder="https://github.com/alexchen/payment-orchestrator or alexchen/payment-orchestrator"
+                            required
+                            className="w-full pl-9 pr-3 py-2.5 bg-[#211A16] border border-[#584638] rounded text-xs font-mono text-[#F5F0E5] placeholder:text-[#BDB0A2]/60 focus:outline-hidden focus:border-[#DD5946]"
+                          />
+                        </div>
+                      </div>
+
+                      {/* Sample repos for instant demonstration */}
+                      <div className="text-[11px] text-[#BDB0A2] space-y-1">
+                        <span className="font-bold text-[#F5F0E5]">Quick Test Repositories:</span>
+                        <div className="flex flex-wrap gap-2 pt-1">
+                          <button
+                            type="button"
+                            onClick={() => setRepoInput('alexchen/payment-orchestrator')}
+                            className="px-2.5 py-1 bg-[#211A16] hover:bg-[#3d3028] text-[#F5F0E5] border border-[#584638] rounded text-[10px] cursor-pointer transition-colors"
+                          >
+                            alexchen/payment-orchestrator (Sample Backend)
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setRepoInput('vercel/next.js')}
+                            className="px-2.5 py-1 bg-[#211A16] hover:bg-[#3d3028] text-[#F5F0E5] border border-[#584638] rounded text-[10px] cursor-pointer transition-colors"
+                          >
+                            vercel/next.js (Public Open Source)
+                          </button>
+                        </div>
+                      </div>
+
+                      {repoError && (
+                        <div className="p-3 bg-[#211A16] border border-red-500/60 rounded flex items-center space-x-2 text-xs text-[#F5F0E5]">
+                          <AlertCircle className="w-4 h-4 text-red-400 shrink-0" />
+                          <span>{repoError}</span>
+                        </div>
+                      )}
+
+                      <div className="pt-4 flex justify-end">
+                        <button
+                          type="submit"
+                          disabled={isVerifyingRepo}
+                          className="px-6 py-3 bg-white hover:bg-[#f4efe2] text-[#2B211B] font-mono text-xs font-bold rounded flex items-center space-x-2 border border-[#d5ccba] disabled:opacity-50 transition-colors shadow-sm cursor-pointer"
+                        >
+                          <span className="text-[#2B211B] font-bold">{isVerifyingRepo ? 'Verifying GitHub Access...' : 'Review Scope & Analyze'}</span>
+                          <ArrowRight className="w-3.5 h-3.5 text-[#2B211B]" />
+                        </button>
+                      </div>
+                    </form>
+                  </div>
+                )}
+
+                {/* PROFILE SCAN FLOW */}
+                {scanMode === 'profile' && (
+                  <div className="space-y-8 animate-fade-in">
+                    <div>
+                      <span className="text-xs uppercase tracking-widest text-[#BDB0A2] block mb-2 font-semibold">
+                        Step 2 of 3 • GitHub Profile Auto-Scan
+                      </span>
+                      <h1 className="font-editorial text-3xl sm:text-4xl font-bold tracking-tight text-[#F5F0E5]">
+                        Auto-scan your GitHub profile
+                      </h1>
+                      <p className="text-xs text-[#BDB0A2] font-sans mt-2 leading-relaxed">
+                        ProofLoop automatically inspects your active public repositories, locates verified code and test evidence for each required skill, and compiles a single unified assessment.
+                      </p>
+                    </div>
+
+                    {/* Extracted Requirements Preview */}
+                    <div className="p-4 bg-[#211A16] border border-[#584638] rounded">
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-xs font-bold text-[#F5F0E5]">
+                          {internshipData.company} — {internshipData.title}
+                        </span>
+                        <span className="text-[11px] text-[#BDB0A2]">
+                          {internshipData.requirements.length} Requirements Extracted
+                        </span>
+                      </div>
+                      <div className="flex flex-wrap gap-1.5">
+                        {internshipData.requirements.map(req => (
+                          <span
+                            key={req.id}
+                            className="px-2 py-0.5 bg-[#30251F] border border-[#584638] rounded text-[10px] text-[#F5F0E5]"
+                          >
+                            {req.title}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+
+                    {profileScanStatus === 'scanning' ? (
+                      <div className="p-8 bg-[#211A16] border border-[#584638] rounded text-center space-y-4">
+                        <div className="inline-flex p-3 rounded-full bg-[#30251F] border border-[#584638]">
+                          <Sparkles className="w-6 h-6 text-amber-400 animate-pulse" />
+                        </div>
+                        <div>
+                          <h3 className="font-editorial text-xl font-bold text-[#F5F0E5]">
+                            Auto-Scanning Repositories
+                          </h3>
+                          <p className="text-xs text-[#BDB0A2] font-mono mt-1">
+                            {profileScanProgress || 'Scanning repositories for code evidence...'}
+                          </p>
+                        </div>
+                        <div className="max-w-md mx-auto bg-[#30251F] h-1.5 rounded-full overflow-hidden">
+                          <div className="bg-[#DD5946] h-full w-2/3 animate-pulse rounded-full" />
+                        </div>
+                        <p className="text-[11px] text-[#BDB0A2] font-sans">
+                          Checking your public repositories for code proof, functions, and tests that match job skills.
+                        </p>
+                      </div>
+                    ) : (
+                      <form onSubmit={handleStartProfileScan} className="space-y-4">
+                        <div>
+                          <label className="block text-xs font-semibold uppercase text-[#BDB0A2] mb-1">
+                            GitHub Profile Link or Username
+                          </label>
+                          <div className="relative">
+                            <GithubIcon className="w-4 h-4 absolute left-3 top-3 text-[#BDB0A2]" />
+                            <input
+                              type="text"
+                              value={profileInput}
+                              onChange={(e) => setProfileInput(e.target.value)}
+                              placeholder="https://github.com/alexchen or alexchen"
+                              required
+                              className="w-full pl-9 pr-3 py-2.5 bg-[#211A16] border border-[#584638] rounded text-xs font-mono text-[#F5F0E5] placeholder:text-[#BDB0A2]/60 focus:outline-hidden focus:border-[#DD5946]"
+                            />
+                          </div>
+                        </div>
+
+                        {/* Quick sample profile buttons */}
+                        <div className="text-[11px] text-[#BDB0A2] space-y-1">
+                          <span className="font-bold text-[#F5F0E5]">Quick Test Profiles:</span>
+                          <div className="flex flex-wrap gap-2 pt-1">
+                            <button
+                              type="button"
+                              onClick={() => setProfileInput('sarthakdhawas')}
+                              className="px-2.5 py-1 bg-[#211A16] hover:bg-[#3d3028] text-[#F5F0E5] border border-[#584638] rounded text-[10px] cursor-pointer transition-colors"
+                            >
+                              sarthakdhawas (Workspace Profile)
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setProfileInput('octocat')}
+                              className="px-2.5 py-1 bg-[#211A16] hover:bg-[#3d3028] text-[#F5F0E5] border border-[#584638] rounded text-[10px] cursor-pointer transition-colors"
+                            >
+                              octocat (Sample Profile)
+                            </button>
+                          </div>
+                        </div>
+
+                        {profileScanStatus === 'failed' && (
+                          <div className="p-4 bg-[#211A16] border border-red-500/60 rounded space-y-3">
+                            <div className="flex items-center space-x-2 text-xs font-bold text-red-400">
+                              <AlertCircle className="w-4 h-4 shrink-0" />
+                              <span>Scan stopped</span>
+                            </div>
+                            <p className="text-xs text-[#BDB0A2] font-sans">
+                              {profileScanError || 'Scan stopped or took too long. Try again.'}
+                            </p>
+                            <button
+                              type="button"
+                              onClick={handleResetProfileScan}
+                              className="px-4 py-2 bg-white hover:bg-[#f4efe2] text-[#2B211B] font-mono text-xs font-bold rounded cursor-pointer transition-colors"
+                            >
+                              Try again
+                            </button>
+                          </div>
+                        )}
+
+                        <div className="pt-4 flex justify-end">
+                          <button
+                            type="submit"
+                            disabled={isStartingProfileScan || !profileInput.trim()}
+                            className="px-6 py-3 bg-white hover:bg-[#f4efe2] text-[#2B211B] font-mono text-xs font-bold rounded flex items-center space-x-2 border border-[#d5ccba] disabled:opacity-50 transition-colors shadow-sm cursor-pointer"
+                          >
+                            <Sparkles className="w-3.5 h-3.5 text-[#2B211B]" />
+                            <span className="text-[#2B211B] font-bold">
+                              {isStartingProfileScan ? 'Starting Profile Scan...' : 'Auto-Scan Profile Repositories'}
+                            </span>
+                            <ArrowRight className="w-3.5 h-3.5 text-[#2B211B]" />
+                          </button>
+                        </div>
+                      </form>
+                    )}
+                  </div>
+                )}
+              </>
+            )}
           </div>
         )}
 

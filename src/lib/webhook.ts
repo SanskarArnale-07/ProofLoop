@@ -13,6 +13,7 @@ import { fetchRepoTree } from './github';
 import { evaluateRepositoryCore } from './analyzer';
 import { AssessmentRevision, ActivityEvent, WebhookDeliveryLog, CommitInfo } from './types';
 import { SCORING_RULE_VERSION } from './scoring';
+import { triggerBackgroundGapReportGeneration } from './ai/gap-coach';
 
 export type WebhookOutcome =
   | 'processed'
@@ -381,6 +382,8 @@ export async function processPushWebhook(
     };
 
     await saveRevision(newRevision);
+    // Best-effort background AI Gap Coach generation; never blocks or fails webhook
+    triggerBackgroundGapReportGeneration(currentAssessment, newRevision);
 
     // Record Activity Event
     const activityEvent: ActivityEvent = {

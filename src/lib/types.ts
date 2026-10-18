@@ -500,3 +500,78 @@ export interface AssessmentVerificationSummary {
   limitationsNotice: string;
 }
 
+// ============================================================================
+// AI Gap Coach Types
+// ============================================================================
+
+export type GapEffortLevel = 'small' | 'medium' | 'large';
+
+export interface AIGapReportItem {
+  requirementId: string;
+  requirementTitle: string;
+  gapReason: string;
+  nextSteps: string[];
+  effort: GapEffortLevel;
+  priority: number;
+}
+
+export interface AIGapReportRevisionDiff {
+  improved: string[];
+  stillMissing: string[];
+}
+
+export interface AIGapReport {
+  id: string;
+  assessmentId: string;
+  revisionId: string;
+  revisionNumber: number;
+  scoringRuleVersion: string;
+  generatedBy: 'ai' | 'rule_based';
+  summary: string;
+  gaps: AIGapReportItem[];
+  strengths: string[];
+  revisionDiff?: AIGapReportRevisionDiff;
+  createdAt: string;
+}
+
+// ============================================================================
+// Profile Scan & Role Suggestion Types
+// ============================================================================
+
+export interface ScannedRepoInfo {
+  fullName: string;
+  name: string;
+  description: string | null;
+  pushedAt: string;
+  language: string | null;
+  stars: number;
+  defaultBranch: string;
+}
+
+export interface SuggestedRole {
+  title: string;
+  matchedSkills: string[];
+  reason: string;
+  searchUrl: string;
+}
+
+export type ProfileScanStatus = 'scanning' | 'completed' | 'partial' | 'failed';
+
+export interface ProfileScanRecord {
+  id: string;
+  username: string;
+  internshipId: string;
+  assessmentId?: string;
+  scannedRepos: ScannedRepoInfo[];
+  bestEvidence: RepositoryEvidence[];
+  suggestedRoles: SuggestedRole[];
+  status: ProfileScanStatus;
+  progressMessage?: string;
+  errorMessage?: string;
+  isPartial: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+
+

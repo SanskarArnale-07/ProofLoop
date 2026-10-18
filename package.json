@@ -8,6 +8,7 @@
     "start": "next start",
     "lint": "eslint",
     "test": "node --test tests/*.test.mjs",
+    "ai:check": "node scripts/ai-check.mjs",
     "db:migrate": "node scripts/migrate.mjs",
     "db:import": "node scripts/import-sqlite-to-postgres.mjs"
   },
